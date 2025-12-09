@@ -40,7 +40,7 @@ export default function SignInPage() {
           router.push("/app/describe")
         }
       }
-    } catch (_error) {
+    } catch {
       setError("An error occurred. Please try again.")
     } finally {
       setIsLoading(false)
@@ -67,7 +67,7 @@ export default function SignInPage() {
           router.push("/app/describe")
         }
       }
-    } catch (_error) {
+    } catch {
       setError("An error occurred. Please try again.")
     } finally {
       setIsLoading(false)
@@ -167,7 +167,7 @@ export default function SignInPage() {
           
           <div className="mt-6 text-center">
             <p className="text-sm text-gray-600">
-              Don&apos;t have an account?{" "}
+              Don&apos;t have an account?{' '}
               <Link href="/auth/signup" className="text-blue-600 hover:text-blue-500">
                 Sign up
               </Link>

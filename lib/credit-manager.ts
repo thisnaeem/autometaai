@@ -279,7 +279,13 @@ export class CreditManager {
   /**
    * Get credit transaction history
    */
-  async getTransactionHistory(limit: number = 50): Promise<any[]> {
+  async getTransactionHistory(limit: number = 50): Promise<Array<{
+    id: string;
+    amount: number;
+    type: string;
+    description: string | null;
+    createdAt: Date;
+  }>> {
     try {
       const transactions = await prisma.creditTransaction.findMany({
         where: { userId: this.userId },

@@ -113,21 +113,21 @@ export default function MetadataGenPage() {
             keywords: data.keywords,
             category: data.category,
           });
-        } catch (err: any) {
+        } catch (err: unknown) {
           newResults.push({
             filename: file.name,
             title: '',
             keywords: '',
             category: '',
-            error: err.message || 'Failed to process image',
+            error: err instanceof Error ? err.message : 'Failed to process image',
           });
         }
 
         setProgress(Math.round(((i + 1) / selectedFiles.length) * 100));
         setResults([...newResults]);
       }
-    } catch (err: any) {
-      setError(err.message || 'An error occurred while processing images');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'An error occurred while processing images');
     } finally {
       setIsProcessing(false);
     }
@@ -223,9 +223,10 @@ export default function MetadataGenPage() {
                   <div className="grid grid-cols-6 gap-3">
                     {previewUrls.map((url, index) => (
                       <div key={index} className="relative group">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={url}
-                          alt={selectedFiles[index].name}
+                          alt={`Preview of ${selectedFiles[index].name}`}
                           className="w-full h-16 object-cover rounded-lg border border-slate-200"
                         />
                         <button

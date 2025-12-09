@@ -390,7 +390,7 @@ export class ImageDescriptionProcessor {
    */
   async processImagesWithStreaming(
     files: File[],
-    onProgress: (update: any) => void,
+    onProgress: (update: Record<string, unknown>) => void,
     abortSignal?: AbortSignal
   ): Promise<ProcessingSummary> {
     if (this.isProcessing) {

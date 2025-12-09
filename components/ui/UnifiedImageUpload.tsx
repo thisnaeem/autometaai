@@ -6,7 +6,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Upload, 
   X, 
-  CheckCircle, 
   AlertCircle, 
   Loader2, 
   Image as ImageIcon,
@@ -244,14 +243,6 @@ const formatTime = (ms: number): string => {
   return `${hours}h ${remainingMinutes}m`;
 };
 
-const formatFileSize = (bytes: number): string => {
-  if (bytes === 0) return '0 Bytes';
-  const k = 1024;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-};
-
 const UnifiedImageUpload: React.FC<UnifiedImageUploadProps> = ({ 
   userCredits = 0,
   onCreditsUpdate,
@@ -443,14 +434,14 @@ const UnifiedImageUpload: React.FC<UnifiedImageUploadProps> = ({
       setErrors(prev => [...prev, error instanceof Error ? error.message : 'Unknown error occurred']);
       setIsProcessing(false);
     }
-  }, [onCreditsUpdate]);
+  }, [onCreditsUpdate, onProcessingComplete, userCredits]);
 
   const downloadResults = () => {
     if (!fileManagerRef.current) return;
     
     const results = fileManagerRef.current.exportResults();
     const dataStr = JSON.stringify(results, null, 2);
-    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+    const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
     
     const exportFileDefaultName = `image-descriptions-${new Date().toISOString().split('T')[0]}.json`;
     
@@ -523,9 +514,13 @@ const UnifiedImageUpload: React.FC<UnifiedImageUploadProps> = ({
               const rootProps = getRootProps();
               // Extract only the safe props, excluding all event handlers that conflict with framer-motion
               const { 
+                // eslint-disable-next-line @typescript-eslint/no-unused-vars
                 onKeyDown, onFocus, onBlur, onClick, onDragEnter, onDragOver, onDragLeave, onDrop,
+                // eslint-disable-next-line @typescript-eslint/no-unused-vars
                 onDrag, onDragEnd, onDragExit, onDragStart, onMouseDown, onMouseEnter, onMouseLeave, 
+                // eslint-disable-next-line @typescript-eslint/no-unused-vars
                 onMouseMove, onMouseOut, onMouseOver, onMouseUp, onAnimationStart, onAnimationEnd,
+                // eslint-disable-next-line @typescript-eslint/no-unused-vars
                 onAnimationIteration, onTransitionEnd, onTransitionStart, onTransitionCancel,
                 ...safeProps 
               } = rootProps;
@@ -743,6 +738,7 @@ const UnifiedImageUpload: React.FC<UnifiedImageUploadProps> = ({
                   className="relative group"
                 >
                   <div className="aspect-square bg-slate-100 rounded-xl overflow-hidden shadow-lg hover:shadow-xl transition-all duration-300">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={file.preview}
                       alt=""

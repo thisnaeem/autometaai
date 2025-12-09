@@ -37,7 +37,7 @@ export async function uploadToCloudinary(
     });
 
     // Return the secure URL
-    return (result as any).secure_url;
+    return (result as { secure_url: string }).secure_url;
   } catch (error) {
     console.error('Cloudinary upload error:', error);
     throw new Error('Failed to upload image to Cloudinary');

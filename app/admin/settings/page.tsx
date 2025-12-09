@@ -41,7 +41,7 @@ export default function AdminSettingsPage() {
           PHOTOROOM_API_KEY: ''
         };
         
-        settings.forEach((setting: any) => {
+        settings.forEach((setting: { key: string; value: string }) => {
           if (setting.key in newKeys) {
             newKeys[setting.key as keyof ApiKeys] = setting.value;
           }

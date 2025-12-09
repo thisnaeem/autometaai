@@ -4,7 +4,6 @@ import React, { useState, useEffect } from 'react';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Delete02Icon, Download01Icon, Copy01Icon, Clock01Icon, FileIcon, Image02Icon } from '@hugeicons/core-free-icons';
 
-import { downloadSingleDescription, downloadBulkDescriptions, type DescriptionData } from '@/lib/download-utils';
 import { Button } from '@/components/ui/Button';
 
 interface HistoryItem {
@@ -92,7 +91,7 @@ const HistoryPage = () => {
     }, 500);
 
     return () => clearTimeout(timeoutId);
-  }, [searchTerm]);
+  }, [searchTerm, activeTab]);
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);

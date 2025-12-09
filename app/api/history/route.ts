@@ -14,7 +14,15 @@ export async function GET(request: NextRequest) {
     
     const skip = (page - 1) * limit;
 
-    let allResults: any[] = [];
+    interface HistoryItem {
+      id: string;
+      filename: string;
+      createdAt: Date;
+      type: string;
+      [key: string]: unknown;
+    }
+    
+    let allResults: HistoryItem[] = [];
     let totalCount = 0;
 
     // Fetch based on type
@@ -45,7 +53,7 @@ export async function GET(request: NextRequest) {
         },
       });
 
-      allResults.push(...descriptions.map(d => ({ ...d, type: 'describe' })));
+      allResults.push(...descriptions.map(d => ({ ...d, type: 'describe' as const })));
       
       if (type === 'describe') {
         totalCount = await prisma.imageDescription.count({ where: whereClause });
@@ -82,7 +90,7 @@ export async function GET(request: NextRequest) {
         },
       });
 
-      allResults.push(...runwayPrompts.map(r => ({ ...r, type: 'runway' })));
+      allResults.push(...runwayPrompts.map(r => ({ ...r, type: 'runway' as const })));
       
       if (type === 'runway') {
         totalCount = await prisma.runwayPrompt.count({ where: whereClause });
@@ -117,7 +125,7 @@ export async function GET(request: NextRequest) {
         },
       });
 
-      allResults.push(...metadataGens.map(m => ({ ...m, type: 'metadata' })));
+      allResults.push(...metadataGens.map(m => ({ ...m, type: 'metadata' as const })));
       
       if (type === 'metadata') {
         totalCount = await prisma.metadataGeneration.count({ where: whereClause });
@@ -161,7 +169,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function DELETE(request: NextRequest) {
+export async function DELETE() {
   try {
     const user = await getCurrentUser();
     

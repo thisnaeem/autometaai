@@ -22,7 +22,7 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000); // Check every 5 minutes
 
-export async function GET(_request: NextRequest) {
+export async function GET() {
   try {
     // Get current user
     const user = await getCurrentUser();

@@ -3,8 +3,7 @@
 import { useState } from 'react';
 import { useUser } from '@/hooks/useUser';
 import UnifiedImageUpload from '@/components/ui/UnifiedImageUpload';
-import { Loader2, Download } from 'lucide-react';
-import { Button } from '@/components/ui/Button';
+import { Loader2 } from 'lucide-react';
 
 interface ProcessResult {
   success: boolean;

@@ -61,8 +61,8 @@ export default function BgRemoverPage() {
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       setProcessedImageUrl(url);
-    } catch (err: any) {
-      setError(err.message || 'An error occurred while processing the image');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'An error occurred while processing the image');
     } finally {
       setIsProcessing(false);
     }
@@ -121,15 +121,16 @@ export default function BgRemoverPage() {
                   </p>
                   <p className="text-sm text-slate-500 mb-4">or click to browse</p>
                   <p className="text-xs text-slate-400">
-                    Supports: JPG, PNG, WEBP (Max 10MB)
+                    Supports: JPG, PNG, WEBP &ndash; Max 10MB
                   </p>
                 </div>
               ) : (
                 <div className="space-y-4">
                   <div className="relative rounded-xl overflow-hidden border border-slate-200">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={previewUrl}
-                      alt="Preview"
+                      alt="Preview of uploaded image"
                       className="w-full h-auto max-h-96 object-contain bg-slate-50"
                     />
                   </div>
@@ -213,9 +214,10 @@ export default function BgRemoverPage() {
               {processedImageUrl ? (
                 <div className="space-y-4">
                   <div className="relative rounded-xl overflow-hidden border border-slate-200 bg-[linear-gradient(45deg,#f0f0f0_25%,transparent_25%,transparent_75%,#f0f0f0_75%,#f0f0f0),linear-gradient(45deg,#f0f0f0_25%,transparent_25%,transparent_75%,#f0f0f0_75%,#f0f0f0)] bg-[length:20px_20px] bg-[position:0_0,10px_10px]">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={processedImageUrl}
-                      alt="Processed"
+                      alt="Processed image with background removed"
                       className="w-full h-auto max-h-96 object-contain"
                     />
                   </div>
@@ -234,7 +236,7 @@ export default function BgRemoverPage() {
                   <HugeiconsIcon icon={Image02Icon} size={80} className="text-slate-300 mb-4" />
                   <p className="text-slate-500 text-lg font-medium">No result yet</p>
                   <p className="text-slate-400 text-sm mt-2">
-                    Upload an image and click "Remove Background" to see the result
+                    Upload an image and click &ldquo;Remove Background&rdquo; to see the result
                   </p>
                 </div>
               )}

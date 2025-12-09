@@ -3,7 +3,7 @@
 import React, { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Upload04Icon, Download01Icon, Image02Icon, Cancel01Icon, Copy01Icon } from '@hugeicons/core-free-icons';
+import { Upload04Icon, Download01Icon, Image02Icon, Copy01Icon } from '@hugeicons/core-free-icons';
 import { Button } from '@/components/ui/Button';
 
 interface PromptResult {
@@ -83,21 +83,21 @@ export default function RunwayPromptPage() {
             medium: data.medium,
             high: data.high,
           });
-        } catch (err: any) {
+        } catch (err: unknown) {
           newResults.push({
             filename: file.name,
             low: '',
             medium: '',
             high: '',
-            error: err.message || 'Failed to process image',
+            error: err instanceof Error ? err.message : 'Failed to process image',
           });
         }
 
         setProgress(Math.round(((i + 1) / selectedFiles.length) * 100));
         setResults([...newResults]);
       }
-    } catch (err: any) {
-      setError(err.message || 'An error occurred while processing images');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'An error occurred while processing images');
     } finally {
       setIsProcessing(false);
     }
@@ -170,7 +170,7 @@ export default function RunwayPromptPage() {
                 </p>
                 <p className="text-sm text-slate-500 mb-4">or click to browse</p>
                 <p className="text-xs text-slate-400">
-                  Supports: JPG, PNG, WEBP (Max 10MB per file)
+                  Supports: JPG, PNG, WEBP &ndash; Max 10MB per file
                 </p>
               </div>
 
@@ -195,9 +195,10 @@ export default function RunwayPromptPage() {
                   <div className="grid grid-cols-4 gap-3">
                     {previewUrls.map((url, index) => (
                       <div key={index} className="relative group">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={url}
-                          alt={selectedFiles[index].name}
+                          alt={`Preview of ${selectedFiles[index].name}`}
                           className="w-full h-20 object-cover rounded-lg border border-slate-200"
                         />
                         <button
@@ -265,7 +266,7 @@ export default function RunwayPromptPage() {
                   <HugeiconsIcon icon={Image02Icon} size={80} className="text-slate-300 mb-4" />
                   <p className="text-slate-500 text-lg font-medium">No results yet</p>
                   <p className="text-slate-400 text-sm mt-2">
-                    Upload images and click "Generate" to see prompts
+                    Upload images and click &ldquo;Generate&rdquo; to see prompts
                   </p>
                 </div>
               ) : (

@@ -47,13 +47,13 @@ const Dialog: React.FC<DialogProps> = ({ open, onOpenChange, children }) => {
       {React.Children.map(children, child => {
         if (React.isValidElement(child)) {
           if (child.type === DialogContent) {
-            return React.cloneElement(child as React.ReactElement<any>, {
+            return React.cloneElement(child as React.ReactElement<{ open?: boolean; onOpenChange?: (open: boolean) => void }>, {
               open: isOpen,
               onOpenChange: handleOpenChange
             });
           }
           if (child.type === DialogTrigger) {
-            return React.cloneElement(child as React.ReactElement<any>, {
+            return React.cloneElement(child as React.ReactElement<{ onClick?: () => void }>, {
               onClick: () => handleOpenChange(true)
             });
           }

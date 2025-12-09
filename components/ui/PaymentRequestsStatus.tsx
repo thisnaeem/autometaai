@@ -111,7 +111,7 @@ export default function PaymentRequestsStatus({ className = '' }: PaymentRequest
           <HugeiconsIcon icon={CreditCardIcon} size={80} className="mx-auto mb-6 text-slate-300" />
           <h3 className="text-2xl font-bold text-slate-900 mb-2">No Payment Requests</h3>
           <p className="text-slate-600 text-lg mb-8">
-            You haven't made any payment requests yet. Purchase credits to get started!
+            You haven&apos;t made any payment requests yet. Purchase credits to get started!
           </p>
           <button
             onClick={() => window.location.href = '/app/buy-credits'}
@@ -148,7 +148,7 @@ export default function PaymentRequestsStatus({ className = '' }: PaymentRequest
                     </span>
                   </div>
                   <div className="text-sm text-slate-600 font-medium">
-                    {request.currency === 'PKR' ? '₨' : '$'}{request.amount} • {formatDate(request.createdAt)}
+                    {request.currency === 'PKR' ? '₨' : '$'}{request.amount} &bull; {formatDate(request.createdAt)}
                   </div>
                 </div>
               </div>

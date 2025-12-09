@@ -193,10 +193,10 @@ Return JSON with: "title", "keywords", "category_id" (number).`;
       category: categoryString,
       creditsRemaining: creditResult.credits,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Metadata generation error:', error);
     return NextResponse.json(
-      { error: error.message || 'An unexpected error occurred' },
+      { error: error instanceof Error ? error.message : 'An unexpected error occurred' },
       { status: 500 }
     );
   }
