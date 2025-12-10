@@ -6,7 +6,6 @@ import bcrypt from "bcryptjs"
 import { prisma } from "@/lib/prisma"
 
 export const authOptions: NextAuthOptions = {
-  adapter: PrismaAdapter(prisma),
   providers: [
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
@@ -62,33 +61,73 @@ export const authOptions: NextAuthOptions = {
     strategy: "jwt"
   },
   callbacks: {
-    async jwt({ token, user }) {
+    async signIn({ user, account, profile }) {
+      // Handle Google OAuth sign-in
+      if (account?.provider === "google" && profile?.email) {
+        try {
+          // Check if user exists
+          let dbUser = await prisma.user.findUnique({
+            where: { email: profile.email }
+          })
+
+          // Create user if doesn't exist
+          if (!dbUser) {
+            dbUser = await prisma.user.create({
+              data: {
+                email: profile.email,
+                name: profile.name || null,
+                image: (profile as any).picture || null,
+                emailVerified: new Date(),
+                role: "USER",
+                credits: 0
+              }
+            })
+          } else {
+            // Update last login
+            await prisma.user.update({
+              where: { id: dbUser.id },
+              data: { lastLoginAt: new Date() }
+            })
+          }
+
+          // Store user ID in the user object for JWT
+          user.id = dbUser.id
+          user.role = dbUser.role
+          user.credits = dbUser.credits
+        } catch (error) {
+          console.error("Error in signIn callback:", error)
+          return false
+        }
+      }
+      return true
+    },
+    async jwt({ token, user, account }) {
+      // Initial sign in
       if (user) {
         token.role = user.role
         token.credits = user.credits
       }
+      
+      // Refresh user data from database on each request
+      if (token.sub) {
+        const dbUser = await prisma.user.findUnique({
+          where: { id: token.sub },
+          select: { role: true, credits: true }
+        })
+        
+        if (dbUser) {
+          token.role = dbUser.role
+          token.credits = dbUser.credits
+        }
+      }
+      
       return token
     },
     async session({ session, token }) {
       if (token && token.sub) {
-        // Fetch fresh user data from database to ensure role is current
-        const dbUser = await prisma.user.findUnique({
-          where: { id: token.sub },
-          select: { id: true, email: true, name: true, role: true, credits: true }
-        })
-        
-        if (dbUser) {
-          session.user.id = dbUser.id
-          session.user.role = dbUser.role
-          session.user.credits = dbUser.credits
-          session.user.email = dbUser.email
-          session.user.name = dbUser.name
-        } else {
-          // Fallback to token data if user not found
-          session.user.id = token.sub
-          session.user.role = token.role as string
-          session.user.credits = token.credits as number
-        }
+        session.user.id = token.sub
+        session.user.role = token.role as string
+        session.user.credits = token.credits as number
       }
       return session
     }
