@@ -21,7 +21,7 @@ export default function AdminLayout({
       return
     }
 
-    if (session.user.role !== "ADMIN") {
+    if ((session.user as any).role !== "ADMIN") {
       router.push("/app/describe")
       return
     }
@@ -35,7 +35,7 @@ export default function AdminLayout({
     )
   }
 
-  if (!session || session.user.role !== "ADMIN") {
+  if (!session || (session.user as any).role !== "ADMIN") {
     return null
   }
 

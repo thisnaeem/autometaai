@@ -103,11 +103,11 @@ const Sidebar = () => {
             <p className="text-xs text-slate-500 truncate">
               {session?.user?.email || 'user@example.com'}
             </p>
-            {session?.user?.credits !== undefined && (
+            {(session?.user as any)?.credits !== undefined && (
               <div className="flex items-center mt-1">
                 <div className="w-2 h-2 bg-green-400 rounded-full mr-1"></div>
                 <p className="text-xs text-emerald-600 font-semibold">
-                  {session.user.credits} credits
+                  {(session?.user as any).credits} credits
                 </p>
               </div>
             )}
@@ -118,7 +118,7 @@ const Sidebar = () => {
         <Button
           variant="outline"
           size="sm"
-          onClick={() => signOut({ fetchOptions: { onSuccess: () => window.location.href = '/auth/signin' } })}
+          onClick={() => signOut({ fetchOptions: { onSuccess: () => { window.location.href = '/auth/signin' } } })}
           className="w-full flex items-center justify-center py-2.5 bg-red-50 border-red-200 text-red-700 hover:bg-red-100 hover:border-red-300 transition-all duration-200 rounded-xl font-medium"
         >
           <HugeiconsIcon icon={Logout01Icon} size={16} strokeWidth={2} className="mr-2" />
