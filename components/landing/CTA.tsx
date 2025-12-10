@@ -56,7 +56,7 @@ export default function CTA() {
             Join thousands of creators who are already using AutometaAI to optimize their content and boost their visibility.
           </p>
 
-          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+          <div className="flex justify-center">
             <Link href="/app/describe">
               <Button
                 variant="primary"
@@ -65,15 +65,6 @@ export default function CTA() {
               >
                 Get Started Free
                 <HugeiconsIcon icon={ArrowRight01Icon} size={24} className="ml-2 group-hover:translate-x-1 transition-transform" />
-              </Button>
-            </Link>
-            <Link href="/app">
-              <Button
-                variant="outline"
-                size="lg"
-                className="w-full sm:w-auto border-2 border-white/50 text-white hover:bg-white/10 px-10 py-5 text-lg font-semibold rounded-xl backdrop-blur-sm"
-              >
-                View Dashboard
               </Button>
             </Link>
           </div>

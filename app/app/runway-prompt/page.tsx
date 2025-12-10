@@ -273,7 +273,24 @@ export default function RunwayPromptPage() {
                 <div className="space-y-4 max-h-[600px] overflow-y-auto">
                   {results.map((result, index) => (
                     <div key={index} className="p-4 bg-slate-50 rounded-xl border border-slate-200">
-                      <p className="text-sm font-semibold text-slate-900 mb-3">{result.filename}</p>
+                      <div className="flex items-start gap-4 mb-3">
+                        {previewUrls[index] && (
+                          <div className="flex-shrink-0">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={previewUrls[index]}
+                              alt={result.filename}
+                              className="w-24 h-24 object-cover rounded-lg border-2 border-slate-300 shadow-sm"
+                            />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-slate-900 truncate">{result.filename}</p>
+                          <p className="text-xs text-slate-500 mt-1">
+                            {selectedFiles[index] && `${(selectedFiles[index].size / 1024).toFixed(1)} KB`}
+                          </p>
+                        </div>
+                      </div>
                       
                       {result.error ? (
                         <p className="text-sm text-red-600">{result.error}</p>

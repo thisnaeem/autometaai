@@ -14,6 +14,12 @@ interface MetadataResult {
   error?: string;
 }
 
+interface FileWithPreview extends File {
+  preview?: string;
+  isVideo?: boolean;
+  isSvg?: boolean;
+}
+
 const STOCK_PLATFORMS = [
   { id: 'adobe', name: 'Adobe Stock', selected: true },
   { id: 'shutterstock', name: 'Shutterstock', locked: true },
@@ -22,7 +28,7 @@ const STOCK_PLATFORMS = [
 ];
 
 export default function MetadataGenPage() {
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [selectedFiles, setSelectedFiles] = useState<FileWithPreview[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [results, setResults] = useState<MetadataResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -44,26 +50,85 @@ export default function MetadataGenPage() {
   const [prohibitedWordsEnabled, setProhibitedWordsEnabled] = useState(false);
   const [prohibitedWords, setProhibitedWords] = useState('');
 
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    setSelectedFiles(prev => [...prev, ...acceptedFiles]);
-
-    acceptedFiles.forEach(file => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        setPreviewUrls(prev => [...prev, reader.result as string]);
+  const extractVideoFrame = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const video = document.createElement('video');
+      video.src = URL.createObjectURL(file);
+      video.muted = true;
+      video.playsInline = true;
+      video.currentTime = 1.0;
+      
+      video.onseeked = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL('image/jpeg'));
+        } else {
+          reject(new Error('Failed to get canvas context'));
+        }
+        URL.revokeObjectURL(video.src);
       };
-      reader.readAsDataURL(file);
+      
+      video.onerror = () => {
+        reject(new Error('Failed to load video'));
+        URL.revokeObjectURL(video.src);
+      };
+      
+      video.load();
     });
+  };
 
+  const onDrop = useCallback(async (acceptedFiles: File[]) => {
+    const filesWithMeta: FileWithPreview[] = [];
+    const previews: string[] = [];
+
+    for (const file of acceptedFiles) {
+      const isVideo = file.type.startsWith('video/');
+      const isSvg = file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg');
+      
+      let preview = '';
+      
+      try {
+        if (isVideo) {
+          preview = await extractVideoFrame(file);
+        } else {
+          preview = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+          });
+        }
+      } catch (err) {
+        console.error('Error processing file:', err);
+        preview = '';
+      }
+
+      const fileWithMeta = Object.assign(file, {
+        preview,
+        isVideo,
+        isSvg
+      });
+
+      filesWithMeta.push(fileWithMeta);
+      previews.push(preview);
+    }
+
+    setSelectedFiles(prev => [...prev, ...filesWithMeta]);
+    setPreviewUrls(prev => [...prev, ...previews]);
     setError('');
   }, []);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
-      'image/*': ['.png', '.jpg', '.jpeg', '.webp']
+      'image/*': ['.png', '.jpg', '.jpeg', '.webp', '.svg'],
+      'video/*': ['.mp4', '.mov', '.avi', '.webm']
     },
-    maxSize: 10 * 1024 * 1024,
+    maxSize: 50 * 1024 * 1024, // 50MB for videos
   });
 
   const removeFile = (index: number) => {
@@ -86,6 +151,8 @@ export default function MetadataGenPage() {
         const file = selectedFiles[i];
         const formData = new FormData();
         formData.append('image', file);
+        formData.append('isVideo', (file.isVideo || false).toString());
+        formData.append('isSvg', (file.isSvg || false).toString());
         formData.append('titleLength', titleLength.toString());
         formData.append('keywordCount', keywordCount.toString());
         formData.append('singleWordKeywords', singleWordKeywords.toString());
@@ -198,7 +265,7 @@ export default function MetadataGenPage() {
                 </p>
                 <p className="text-sm text-slate-500 mb-4">or click to browse</p>
                 <p className="text-xs text-slate-400">
-                  Supports: JPG, PNG, WEBP (Max 10MB per file)
+                  Supports: JPG, PNG, WEBP, SVG, MP4, MOV, AVI, WEBM (Max 50MB per file)
                 </p>
               </div>
 
@@ -221,22 +288,40 @@ export default function MetadataGenPage() {
                   </div>
 
                   <div className="grid grid-cols-6 gap-3">
-                    {previewUrls.map((url, index) => (
-                      <div key={index} className="relative group">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={url}
-                          alt={`Preview of ${selectedFiles[index].name}`}
-                          className="w-full h-16 object-cover rounded-lg border border-slate-200"
-                        />
-                        <button
-                          onClick={() => removeFile(index)}
-                          className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-xs"
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ))}
+                    {previewUrls.map((url, index) => {
+                      const file = selectedFiles[index];
+                      const isVideo = file?.isVideo;
+                      const isSvg = file?.isSvg;
+                      
+                      return (
+                        <div key={index} className="relative group">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={url}
+                            alt={`Preview of ${file?.name}`}
+                            className={`w-full h-16 object-cover rounded-lg border border-slate-200 ${
+                              isSvg ? 'bg-white p-1' : ''
+                            }`}
+                          />
+                          {isVideo && (
+                            <div className="absolute bottom-1 right-1 bg-black/70 text-white text-[8px] px-1 py-0.5 rounded font-bold">
+                              VIDEO
+                            </div>
+                          )}
+                          {isSvg && (
+                            <div className="absolute bottom-1 right-1 bg-purple-600 text-white text-[8px] px-1 py-0.5 rounded font-bold">
+                              SVG
+                            </div>
+                          )}
+                          <button
+                            onClick={() => removeFile(index)}
+                            className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-xs"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -284,7 +369,7 @@ export default function MetadataGenPage() {
             </div>
 
             {/* Advanced Settings Dropdown */}
-            <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
+            <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-visible relative z-10">
               <button
                 onClick={() => setShowAdvancedSettings(!showAdvancedSettings)}
                 className="w-full px-6 py-4 bg-gradient-to-r from-orange-500 to-red-500 text-white font-bold text-sm flex items-center justify-between hover:from-orange-600 hover:to-red-600 transition-all shadow-lg"
@@ -304,13 +389,19 @@ export default function MetadataGenPage() {
                 </svg>
               </button>
 
-              <div className={`transition-all duration-300 overflow-hidden ${showAdvancedSettings ? 'max-h-[800px]' : 'max-h-0'}`}>
-                <div className="p-6 space-y-4 border-t border-slate-200">
+              <div className={`transition-all duration-300 ${showAdvancedSettings ? 'max-h-[800px]' : 'max-h-0 overflow-hidden'}`}>
+                <div className="p-6 space-y-4 border-t border-slate-200 overflow-visible">
                   {/* Silhouette */}
-                  <div className="flex items-center justify-between py-4 border-b border-slate-200">
+                  <div className="flex items-center justify-between py-4 border-b border-slate-200 relative">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-bold text-slate-900 uppercase tracking-wide">SILHOUETTE</span>
-                      <HugeiconsIcon icon={InformationCircleIcon} size={16} className="text-slate-400" />
+                      <div className="relative group">
+                        <HugeiconsIcon icon={InformationCircleIcon} size={16} className="text-slate-400 cursor-help" />
+                        <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 p-3 bg-slate-900 text-white text-xs rounded-lg shadow-xl z-[9999]">
+                          <div className="absolute left-4 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-900"></div>
+                          Enable this if your image is a silhouette (solid shape with no internal details). This helps AI generate more accurate metadata.
+                        </div>
+                      </div>
                     </div>
                     <button
                       onClick={() => setIsSilhouette(!isSilhouette)}
@@ -325,11 +416,17 @@ export default function MetadataGenPage() {
                   </div>
 
                   {/* Custom Prompt */}
-                  <div className="border-b border-slate-200 pb-4">
+                  <div className="border-b border-slate-200 pb-4 relative">
                     <div className="flex items-center justify-between py-4">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-bold text-slate-900 uppercase tracking-wide">CUSTOM PROMPT</span>
-                        <HugeiconsIcon icon={InformationCircleIcon} size={16} className="text-slate-400" />
+                        <div className="relative group">
+                          <HugeiconsIcon icon={InformationCircleIcon} size={16} className="text-slate-400 cursor-help" />
+                          <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 p-3 bg-slate-900 text-white text-xs rounded-lg shadow-xl z-[9999]">
+                            <div className="absolute left-4 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-900"></div>
+                            Add custom instructions to guide the AI. For example: "Focus on mood and atmosphere" or "Emphasize technical details".
+                          </div>
+                        </div>
                       </div>
                       <button
                         onClick={() => setCustomPromptEnabled(!customPromptEnabled)}
@@ -354,10 +451,16 @@ export default function MetadataGenPage() {
                   </div>
 
                   {/* White Background */}
-                  <div className="flex items-center justify-between py-4 border-b border-slate-200">
+                  <div className="flex items-center justify-between py-4 border-b border-slate-200 relative">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-bold text-slate-900 uppercase tracking-wide">WHITE BACKGROUND</span>
-                      <HugeiconsIcon icon={InformationCircleIcon} size={16} className="text-slate-400" />
+                      <div className="relative group">
+                        <HugeiconsIcon icon={InformationCircleIcon} size={16} className="text-slate-400 cursor-help" />
+                        <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 p-3 bg-slate-900 text-white text-xs rounded-lg shadow-xl z-[9999]">
+                          <div className="absolute left-4 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-900"></div>
+                          Enable if your image has a white or light-colored background. This helps generate appropriate keywords and descriptions.
+                        </div>
+                      </div>
                     </div>
                     <button
                       onClick={() => setWhiteBackground(!whiteBackground)}
@@ -372,10 +475,16 @@ export default function MetadataGenPage() {
                   </div>
 
                   {/* Transparent Background */}
-                  <div className="flex items-center justify-between py-4 border-b border-slate-200">
+                  <div className="flex items-center justify-between py-4 border-b border-slate-200 relative">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-bold text-slate-900 uppercase tracking-wide">TRANSPARENT BACKGROUND</span>
-                      <HugeiconsIcon icon={InformationCircleIcon} size={16} className="text-slate-400" />
+                      <div className="relative group">
+                        <HugeiconsIcon icon={InformationCircleIcon} size={16} className="text-slate-400 cursor-help" />
+                        <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 p-3 bg-slate-900 text-white text-xs rounded-lg shadow-xl z-[9999]">
+                          <div className="absolute left-4 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-900"></div>
+                          Enable for PNG images with transparent backgrounds. The title will include "isolated on transparent background" for stock platforms.
+                        </div>
+                      </div>
                     </div>
                     <button
                       onClick={() => setTransparentBackground(!transparentBackground)}
@@ -390,11 +499,17 @@ export default function MetadataGenPage() {
                   </div>
 
                   {/* Prohibited Words */}
-                  <div className="border-b border-slate-200 pb-4">
+                  <div className="border-b border-slate-200 pb-4 relative">
                     <div className="flex items-center justify-between py-4">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-bold text-slate-900 uppercase tracking-wide">PROHIBITED WORDS</span>
-                        <HugeiconsIcon icon={InformationCircleIcon} size={16} className="text-slate-400" />
+                        <div className="relative group">
+                          <HugeiconsIcon icon={InformationCircleIcon} size={16} className="text-slate-400 cursor-help" />
+                          <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 p-3 bg-slate-900 text-white text-xs rounded-lg shadow-xl z-[9999]">
+                            <div className="absolute left-4 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-900"></div>
+                            List words to exclude from metadata (comma-separated). Example: "text, watermark, blur, logo". Useful for avoiding unwanted terms.
+                          </div>
+                        </div>
                       </div>
                       <button
                         onClick={() => setProhibitedWordsEnabled(!prohibitedWordsEnabled)}
@@ -419,10 +534,16 @@ export default function MetadataGenPage() {
                   </div>
 
                   {/* Single Word Keywords */}
-                  <div className="flex items-center justify-between py-4">
+                  <div className="flex items-center justify-between py-4 relative">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-bold text-slate-900 uppercase tracking-wide">SINGLE WORD KEYWORDS</span>
-                      <HugeiconsIcon icon={InformationCircleIcon} size={16} className="text-slate-400" />
+                      <div className="relative group">
+                        <HugeiconsIcon icon={InformationCircleIcon} size={16} className="text-slate-400 cursor-help" />
+                        <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 p-3 bg-slate-900 text-white text-xs rounded-lg shadow-xl z-[9999]">
+                          <div className="absolute left-4 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-900"></div>
+                          Generate only single-word keywords instead of phrases. Example: "sunset" instead of "beautiful sunset". Some platforms prefer this format.
+                        </div>
+                      </div>
                     </div>
                     <button
                       onClick={() => setSingleWordKeywords(!singleWordKeywords)}
@@ -442,21 +563,55 @@ export default function MetadataGenPage() {
             {/* Platform Selection */}
             <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-6">
               <h3 className="text-lg font-semibold text-slate-900 mb-4">Export Platform</h3>
-              <div className="grid grid-cols-2 gap-3">
-                {STOCK_PLATFORMS.map((platform) => (
-                  <div
-                    key={platform.id}
-                    className={`p-4 rounded-xl border-2 text-center ${platform.selected
-                      ? 'border-cyan-500 bg-gradient-to-br from-cyan-50 to-blue-50'
-                      : 'border-slate-200 bg-slate-50 opacity-50'
-                      } ${platform.locked ? 'cursor-not-allowed' : 'cursor-pointer'}`}
-                  >
-                    <p className="text-sm font-semibold text-slate-900">{platform.name}</p>
-                    {platform.locked && (
-                      <p className="text-xs text-slate-500 mt-1">Coming Soon</p>
-                    )}
-                  </div>
-                ))}
+              <div className="relative">
+                {/* Background Rectangle */}
+                <div className="absolute inset-0 bg-gradient-to-r from-slate-50 via-slate-100 to-slate-50 rounded-xl -z-10"></div>
+                
+                {/* Platforms in one line */}
+                <div className="flex items-center justify-between gap-4 p-4">
+                  {STOCK_PLATFORMS.map((platform) => (
+                    <div
+                      key={platform.id}
+                      className={`relative flex-1 p-4 rounded-lg border-2 flex items-center justify-center transition-all duration-300 ${
+                        platform.selected
+                          ? 'border-cyan-500 bg-white shadow-lg scale-105'
+                          : 'border-transparent bg-white/50 opacity-60'
+                      } ${platform.locked ? 'cursor-not-allowed' : 'cursor-pointer hover:scale-105'}`}
+                    >
+                      {/* Platform Logo */}
+                      <div className="relative h-10 w-full flex items-center justify-center">
+                        {platform.id === 'adobe' && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src="/adobe.png" alt="Adobe Stock" className="h-10 w-auto object-contain" />
+                        )}
+                        {platform.id === 'shutterstock' && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src="/shutterstock.png" alt="Shutterstock" className="h-10 w-auto object-contain" />
+                        )}
+                        {platform.id === 'istock' && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src="/istock.png" alt="iStock" className="h-10 w-auto object-contain" />
+                        )}
+                        {platform.id === 'getty' && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src="/freepik.png" alt="Getty Images" className="h-10 w-auto object-contain" />
+                        )}
+                      </div>
+                      
+                      {/* Coming Soon Badge */}
+                      {platform.locked && (
+                        <div className="absolute -top-2 -right-2 bg-slate-400 text-white text-[10px] px-2 py-1 rounded-full font-bold">
+                          Soon
+                        </div>
+                      )}
+                      
+                      {/* Selected Indicator */}
+                      {platform.selected && (
+                        <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-8 h-1 bg-cyan-500 rounded-full"></div>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
 
@@ -517,41 +672,59 @@ export default function MetadataGenPage() {
                 </div>
               ) : (
                 <div className="space-y-4 max-h-[800px] overflow-y-auto">
-                  {results.map((result, index) => (
-                    <div key={index} className="p-4 bg-slate-50 rounded-xl border border-slate-200">
-                      <p className="text-sm font-semibold text-slate-900 mb-3">{result.filename}</p>
-
-                      {result.error ? (
-                        <p className="text-sm text-red-600">{result.error}</p>
-                      ) : (
-                        <div className="space-y-3">
-                          {[
-                            { label: 'Title', value: result.title, color: 'from-cyan-500 to-blue-500' },
-                            { label: 'Category', value: result.category, color: 'from-blue-500 to-indigo-500' },
-                            { label: 'Keywords', value: result.keywords, color: 'from-indigo-500 to-purple-500' }
-                          ].map((item, i) => (
-                            <div key={i}>
-                              <div className="flex items-center justify-between mb-1">
-                                <span className={`text-xs font-bold uppercase bg-gradient-to-r ${item.color} bg-clip-text text-transparent`}>
-                                  {item.label}
-                                </span>
-                                <button
-                                  onClick={() => copyToClipboard(item.value)}
-                                  className="p-1 hover:bg-slate-200 rounded transition-colors"
-                                  title="Copy"
-                                >
-                                  <HugeiconsIcon icon={Copy01Icon} size={14} className="text-slate-500" />
-                                </button>
-                              </div>
-                              <p className="text-xs text-slate-700 bg-white p-2 rounded border border-slate-200 break-words">
-                                {item.value}
-                              </p>
-                            </div>
-                          ))}
+                  {results.map((result, index) => {
+                    const file = selectedFiles[index];
+                    const isVideo = file?.isVideo;
+                    const isSvg = file?.isSvg;
+                    
+                    return (
+                      <div key={index} className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                        <div className="flex items-center gap-2 mb-3">
+                          <p className="text-sm font-semibold text-slate-900 flex-1">{result.filename}</p>
+                          {isVideo && (
+                            <span className="text-[10px] font-bold bg-black text-white px-2 py-1 rounded">
+                              VIDEO
+                            </span>
+                          )}
+                          {isSvg && (
+                            <span className="text-[10px] font-bold bg-purple-600 text-white px-2 py-1 rounded">
+                              SVG
+                            </span>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  ))}
+
+                        {result.error ? (
+                          <p className="text-sm text-red-600">{result.error}</p>
+                        ) : (
+                          <div className="space-y-3">
+                            {[
+                              { label: 'Title', value: result.title, color: 'from-cyan-500 to-blue-500' },
+                              { label: 'Category', value: result.category, color: 'from-blue-500 to-indigo-500' },
+                              { label: 'Keywords', value: result.keywords, color: 'from-indigo-500 to-purple-500' }
+                            ].map((item, i) => (
+                              <div key={i}>
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className={`text-xs font-bold uppercase bg-gradient-to-r ${item.color} bg-clip-text text-transparent`}>
+                                    {item.label}
+                                  </span>
+                                  <button
+                                    onClick={() => copyToClipboard(item.value)}
+                                    className="p-1 hover:bg-slate-200 rounded transition-colors"
+                                    title="Copy"
+                                  >
+                                    <HugeiconsIcon icon={Copy01Icon} size={14} className="text-slate-500" />
+                                  </button>
+                                </div>
+                                <p className="text-xs text-slate-700 bg-white p-2 rounded border border-slate-200 break-words">
+                                  {item.value}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

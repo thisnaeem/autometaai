@@ -44,6 +44,8 @@ export async function POST(request: NextRequest) {
 
     const formData = await request.formData();
     const imageFile = formData.get('image') as File;
+    const isVideo = formData.get('isVideo') === 'true';
+    const isSvg = formData.get('isSvg') === 'true';
     const titleLength = parseInt(formData.get('titleLength') as string) || 150;
     const keywordCount = parseInt(formData.get('keywordCount') as string) || 45;
     const singleWordKeywords = formData.get('singleWordKeywords') === 'true';
@@ -63,7 +65,17 @@ export async function POST(request: NextRequest) {
     const bytes = await imageFile.arrayBuffer();
     const buffer = Buffer.from(bytes);
     const base64Image = buffer.toString('base64');
-    const mimeType = imageFile.type || 'image/jpeg';
+    let mimeType = imageFile.type || 'image/jpeg';
+    
+    // For SVG, ensure correct mime type
+    if (isSvg || imageFile.name.toLowerCase().endsWith('.svg')) {
+      mimeType = 'image/svg+xml';
+    }
+    
+    // For video, we're using the extracted frame (JPEG)
+    if (isVideo) {
+      mimeType = 'image/jpeg';
+    }
 
     const openai = new OpenAI({ apiKey });
 
@@ -78,6 +90,8 @@ export async function POST(request: NextRequest) {
     if (isSilhouette) instructions.push('This is a silhouette.');
     if (whiteBackground) instructions.push('This has a white background.');
     if (transparentBackground) instructions.push('This has a transparent background.');
+    if (isVideo) instructions.push('This is a frame from a video. Generate metadata for the video content.');
+    if (isSvg) instructions.push('This is an SVG vector graphic.');
     
     const instructionsText = instructions.length > 0 ? `\nInfo: ${instructions.join(' ')}` : '';
     const customPromptText = customPrompt ? `\nCustom: ${customPrompt}` : '';

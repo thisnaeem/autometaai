@@ -124,11 +124,38 @@ The tool handles various errors:
 - **API**: Photoroom Remove Background API
 - **Auth**: NextAuth.js
 
+## Bulk Processing (NEW!)
+
+### Features
+- ✅ Upload multiple images at once
+- ✅ Batch processing with progress tracking
+- ✅ ZIP download for multiple results
+- ✅ Credit system integration (1 credit per image)
+- ✅ Individual error handling per image
+- ✅ Failed images don't consume credits
+
+### API Endpoint
+`/api/remove-background-bulk` handles bulk processing:
+- Accepts multiple images via FormData
+- Processes each image individually
+- Returns base64-encoded results
+- Only charges credits for successful processing
+
+### Usage
+1. Upload multiple images (drag & drop or browse)
+2. Review selected files list
+3. Click "Remove Backgrounds (X)" button
+4. Download all results as ZIP file
+
+### Dependencies
+```bash
+npm install jszip
+```
+
 ## Future Enhancements
-- [ ] Batch processing
 - [ ] Background color picker
 - [ ] Image editing tools
 - [ ] History of processed images
-- [ ] Credit system integration
 - [ ] Custom background images
 - [ ] Image quality settings
+- [ ] Parallel processing optimization
