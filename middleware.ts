@@ -2,8 +2,11 @@ import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 
 export async function middleware(req: NextRequest) {
-  // Simple cookie-based auth check (Better Auth uses 'better-auth.session_token' cookie)
-  const sessionToken = req.cookies.get('better-auth.session_token')
+  // Simple cookie-based auth check
+  // Better Auth uses '__Secure-better-auth.session_token' in production (HTTPS)
+  // and 'better-auth.session_token' in development (HTTP)
+  const sessionToken = req.cookies.get('__Secure-better-auth.session_token') || 
+                       req.cookies.get('better-auth.session_token')
   const isAuth = !!sessionToken
 
   const isAuthPage = req.nextUrl.pathname.startsWith("/auth")
