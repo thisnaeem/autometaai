@@ -80,23 +80,32 @@ export async function POST(request: NextRequest) {
 
       // If approved, add credits to user and create credit transaction
       if (action === 'APPROVED') {
+        // Determine which credit field to update based on creditType
+        const creditField = paymentRequest.creditType === 'BG_REMOVAL' 
+          ? 'bgRemovalCredits' 
+          : 'credits';
+
         // Update user credits
         await tx.user.update({
           where: { id: paymentRequest.userId },
           data: {
-            credits: {
+            [creditField]: {
               increment: paymentRequest.creditsRequested
             }
           }
         });
 
         // Create credit transaction record
+        const creditTypeLabel = paymentRequest.creditType === 'BG_REMOVAL' 
+          ? 'BG Removal Credits' 
+          : 'General Credits';
+
         await tx.creditTransaction.create({
           data: {
             userId: paymentRequest.userId,
             amount: paymentRequest.creditsRequested,
             type: 'PURCHASE',
-            description: `Credits purchased via ${paymentRequest.paymentMethod} - Payment Request #${requestId.slice(-8)}`
+            description: `${creditTypeLabel} purchased via ${paymentRequest.paymentMethod} - Payment Request #${requestId.slice(-8)}`
           }
         });
       }

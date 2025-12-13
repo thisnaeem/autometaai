@@ -33,6 +33,8 @@ export default function MetadataGenPage() {
   const [results, setResults] = useState<MetadataResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [currentFile, setCurrentFile] = useState(0);
+  const [totalFiles, setTotalFiles] = useState(0);
   const [error, setError] = useState<string>('');
 
   // Settings
@@ -145,10 +147,80 @@ export default function MetadataGenPage() {
     setProgress(0);
 
     try {
-      const newResults: MetadataResult[] = [];
+      if (selectedFiles.length > 1) {
+        // Process images one by one to show real-time progress
+        setTotalFiles(selectedFiles.length);
+        const newResults: MetadataResult[] = [];
 
-      for (let i = 0; i < selectedFiles.length; i++) {
-        const file = selectedFiles[i];
+        for (let i = 0; i < selectedFiles.length; i++) {
+          setCurrentFile(i + 1);
+          setProgress(Math.round(((i + 1) / selectedFiles.length) * 100));
+
+          const file = selectedFiles[i];
+          const formData = new FormData();
+          formData.append('image', file);
+          formData.append('isVideo', (file.isVideo || false).toString());
+          formData.append('isSvg', (file.isSvg || false).toString());
+          formData.append('titleLength', titleLength.toString());
+          formData.append('keywordCount', keywordCount.toString());
+          formData.append('singleWordKeywords', singleWordKeywords.toString());
+          formData.append('isSilhouette', isSilhouette.toString());
+          formData.append('customPrompt', customPromptEnabled ? customPrompt : '');
+          formData.append('whiteBackground', whiteBackground.toString());
+          formData.append('transparentBackground', transparentBackground.toString());
+          formData.append('prohibitedWords', prohibitedWordsEnabled ? prohibitedWords : '');
+
+          try {
+            const response = await fetch('/api/generate-metadata', {
+              method: 'POST',
+              body: formData,
+            });
+
+            if (!response.ok) {
+              const errorData = await response.json();
+              throw new Error(errorData.error || 'Failed to generate metadata');
+            }
+
+            const data = await response.json();
+            newResults.push({
+              filename: file.name,
+              title: data.title,
+              keywords: data.keywords,
+              category: data.category,
+            });
+          } catch (err: unknown) {
+            newResults.push({
+              filename: file.name,
+              title: '',
+              keywords: '',
+              category: '',
+              error: err instanceof Error ? err.message : 'Failed to process image',
+            });
+          }
+
+          setResults([...newResults]);
+        }
+
+        // After all processed, create batch file
+        try {
+          const bulkFormData = new FormData();
+          selectedFiles.forEach((file) => {
+            bulkFormData.append('images', file);
+          });
+          bulkFormData.append('titleLength', titleLength.toString());
+          bulkFormData.append('keywordCount', keywordCount.toString());
+          bulkFormData.append('singleWordKeywords', singleWordKeywords.toString());
+
+          await fetch('/api/generate-metadata/bulk', {
+            method: 'POST',
+            body: bulkFormData,
+          });
+        } catch (err) {
+          console.error('Failed to create batch file:', err);
+        }
+      } else {
+        // Use single API for one image
+        const file = selectedFiles[0];
         const formData = new FormData();
         formData.append('image', file);
         formData.append('isVideo', (file.isVideo || false).toString());
@@ -162,36 +234,26 @@ export default function MetadataGenPage() {
         formData.append('transparentBackground', transparentBackground.toString());
         formData.append('prohibitedWords', prohibitedWordsEnabled ? prohibitedWords : '');
 
-        try {
-          const response = await fetch('/api/generate-metadata', {
-            method: 'POST',
-            body: formData,
-          });
+        const response = await fetch('/api/generate-metadata', {
+          method: 'POST',
+          body: formData,
+        });
 
-          if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || 'Failed to generate metadata');
-          }
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to generate metadata');
+        }
 
-          const data = await response.json();
-          newResults.push({
+        const data = await response.json();
+        setResults([
+          {
             filename: file.name,
             title: data.title,
             keywords: data.keywords,
             category: data.category,
-          });
-        } catch (err: unknown) {
-          newResults.push({
-            filename: file.name,
-            title: '',
-            keywords: '',
-            category: '',
-            error: err instanceof Error ? err.message : 'Failed to process image',
-          });
-        }
-
-        setProgress(Math.round(((i + 1) / selectedFiles.length) * 100));
-        setResults([...newResults]);
+          },
+        ]);
+        setProgress(100);
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'An error occurred while processing images');
@@ -631,7 +693,7 @@ export default function MetadataGenPage() {
               {isProcessing ? (
                 <>
                   <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                  Processing... {progress}%
+                  {totalFiles > 1 ? `Processing ${currentFile}/${totalFiles}` : `Processing... ${progress}%`}
                 </>
               ) : (
                 <>

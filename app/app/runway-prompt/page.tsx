@@ -20,6 +20,8 @@ export default function RunwayPromptPage() {
   const [results, setResults] = useState<PromptResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [currentFile, setCurrentFile] = useState(0);
+  const [totalFiles, setTotalFiles] = useState(0);
   const [error, setError] = useState<string>('');
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
@@ -56,50 +58,99 @@ export default function RunwayPromptPage() {
     setError('');
     setResults([]);
     setProgress(0);
+    setCurrentFile(0);
+    setTotalFiles(0);
 
     try {
-      const newResults: PromptResult[] = [];
+      if (selectedFiles.length > 1) {
+        // Process images one by one to show real-time progress
+        setTotalFiles(selectedFiles.length);
+        const newResults: PromptResult[] = [];
 
-      for (let i = 0; i < selectedFiles.length; i++) {
-        const file = selectedFiles[i];
+        for (let i = 0; i < selectedFiles.length; i++) {
+          setCurrentFile(i + 1);
+          setProgress(Math.round(((i + 1) / selectedFiles.length) * 100));
+
+          const file = selectedFiles[i];
+          const formData = new FormData();
+          formData.append('image', file);
+          formData.append('skipHistory', 'true');
+
+          try {
+            const response = await fetch('/api/runway-prompt', {
+              method: 'POST',
+              body: formData,
+            });
+
+            if (!response.ok) {
+              const errorData = await response.json();
+              throw new Error(errorData.error || 'Failed to generate prompt');
+            }
+
+            const data = await response.json();
+            newResults.push({
+              filename: file.name,
+              low: data.low,
+              medium: data.medium,
+              high: data.high,
+            });
+          } catch (err: unknown) {
+            newResults.push({
+              filename: file.name,
+              low: '',
+              medium: '',
+              high: '',
+              error: err instanceof Error ? err.message : 'Failed to process image',
+            });
+          }
+
+          setResults(prev => [...newResults]);
+        }
+
+        // After all processed, create batch file in background (don't wait)
+        fetch('/api/runway-prompt/bulk', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ results: newResults }),
+        }).catch(err => {
+          console.error('Failed to create batch file:', err);
+        });
+      } else {
+        // Use single API for one image
+        const file = selectedFiles[0];
         const formData = new FormData();
         formData.append('image', file);
 
-        try {
-          const response = await fetch('/api/runway-prompt', {
-            method: 'POST',
-            body: formData,
-          });
+        const response = await fetch('/api/runway-prompt', {
+          method: 'POST',
+          body: formData,
+        });
 
-          if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || 'Failed to generate prompt');
-          }
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to generate prompt');
+        }
 
-          const data = await response.json();
-          newResults.push({
+        const data = await response.json();
+        setResults([
+          {
             filename: file.name,
             low: data.low,
             medium: data.medium,
             high: data.high,
-          });
-        } catch (err: unknown) {
-          newResults.push({
-            filename: file.name,
-            low: '',
-            medium: '',
-            high: '',
-            error: err instanceof Error ? err.message : 'Failed to process image',
-          });
-        }
-
-        setProgress(Math.round(((i + 1) / selectedFiles.length) * 100));
-        setResults([...newResults]);
+          },
+        ]);
+        setProgress(100);
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'An error occurred while processing images');
     } finally {
       setIsProcessing(false);
+      setCurrentFile(0);
+      setTotalFiles(0);
+      setProgress(0);
     }
   };
 
@@ -229,7 +280,7 @@ export default function RunwayPromptPage() {
                 {isProcessing ? (
                   <>
                     <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                    Processing... {progress}%
+                    {totalFiles > 0 ? `Processing ${currentFile}/${totalFiles}` : 'Processing...'}
                   </>
                 ) : (
                   <>

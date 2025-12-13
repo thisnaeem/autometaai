@@ -25,6 +25,37 @@ export async function GET(request: NextRequest) {
     let allResults: HistoryItem[] = [];
     let totalCount = 0;
 
+    // Fetch batch operations first
+    const batchWhereClause = {
+      userId: user.id,
+      ...(type !== 'all' && { type }),
+    };
+
+    const batchOperations = await prisma.batchOperation.findMany({
+      where: batchWhereClause,
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        type: true,
+        itemCount: true,
+        fileUrl: true,
+        createdAt: true,
+      },
+    });
+
+    // Convert batch operations to history items
+    allResults.push(
+      ...batchOperations.map((b) => ({
+        id: b.id,
+        filename: `Batch of ${b.itemCount} images`,
+        type: b.type as 'describe' | 'runway' | 'metadata',
+        fileUrl: b.fileUrl,
+        createdAt: b.createdAt,
+        isBatch: true,
+        itemCount: b.itemCount,
+      }))
+    );
+
     // Fetch based on type
     if (type === 'all' || type === 'describe') {
       const whereClause = {
@@ -49,6 +80,7 @@ export async function GET(request: NextRequest) {
           source: true,
           fileSize: true,
           mimeType: true,
+          fileUrl: true,
           createdAt: true,
         },
       });
@@ -86,6 +118,7 @@ export async function GET(request: NextRequest) {
           description: true,
           fileSize: true,
           mimeType: true,
+          fileUrl: true,
           createdAt: true,
         },
       });
@@ -121,6 +154,7 @@ export async function GET(request: NextRequest) {
           category: true,
           fileSize: true,
           mimeType: true,
+          fileUrl: true,
           createdAt: true,
         },
       });
@@ -173,16 +207,36 @@ export async function DELETE() {
   try {
     const user = await getCurrentUser();
     
-    // Delete all image descriptions for the current user
-    const result = await prisma.imageDescription.deleteMany({
-      where: {
-        userId: user.id,
-      },
-    });
+    // Delete all history records for the current user
+    const [descriptionsResult, runwayResult, metadataResult, batchResult] = await Promise.all([
+      prisma.imageDescription.deleteMany({
+        where: { userId: user.id },
+      }),
+      prisma.runwayPrompt.deleteMany({
+        where: { userId: user.id },
+      }),
+      prisma.metadataGeneration.deleteMany({
+        where: { userId: user.id },
+      }),
+      prisma.batchOperation.deleteMany({
+        where: { userId: user.id },
+      }),
+    ]);
+
+    const totalDeleted = 
+      descriptionsResult.count + 
+      runwayResult.count + 
+      metadataResult.count;
 
     return NextResponse.json({
       message: 'History cleared successfully',
-      deletedCount: result.count,
+      deletedCount: totalDeleted,
+      details: {
+        descriptions: descriptionsResult.count,
+        runwayPrompts: runwayResult.count,
+        metadata: metadataResult.count,
+        batches: batchResult.count,
+      },
     });
   } catch (error) {
     console.error('Error clearing history:', error);

@@ -16,7 +16,7 @@ interface ProcessedImage {
 }
 
 export default function BgRemoverPage() {
-  const { user, updateCredits } = useUser();
+  const { user, updateBgCredits } = useUser();
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [processedImages, setProcessedImages] = useState<ProcessedImage[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -70,8 +70,8 @@ export default function BgRemoverPage() {
 
       const data = await response.json();
       
-      if (data.remainingCredits !== undefined) {
-        updateCredits(data.remainingCredits);
+      if (data.remainingBgCredits !== undefined) {
+        updateBgCredits(data.remainingBgCredits);
       }
 
       const processed: ProcessedImage[] = data.results.map((result: any) => ({
@@ -148,9 +148,14 @@ export default function BgRemoverPage() {
           <h1 className="text-4xl font-bold text-slate-900 mb-2">Bulk Background Remover</h1>
           <p className="text-slate-600">Remove backgrounds from multiple images at once with AI</p>
           {user && (
-            <p className="text-sm text-slate-500 mt-2">
-              Available Credits: <span className="font-semibold text-blue-600">{user.credits}</span>
-            </p>
+            <div className="mt-3 flex gap-4 text-sm">
+              <p className="text-slate-500">
+                BG Removal Credits: <span className="font-semibold text-purple-600">{user.bgRemovalCredits}</span>
+              </p>
+              <p className="text-slate-500">
+                General Credits: <span className="font-semibold text-blue-600">{user.credits}</span>
+              </p>
+            </div>
           )}
         </div>
 
@@ -222,8 +227,8 @@ export default function BgRemoverPage() {
                       variant="primary"
                       size="lg"
                       onClick={handleRemoveBackground}
-                      disabled={isProcessing || (user?.credits || 0) < selectedFiles.length}
-                      className="flex-1 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700"
+                      disabled={isProcessing || (user?.bgRemovalCredits || 0) < selectedFiles.length}
+                      className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
                     >
                       {isProcessing ? (
                         <>
@@ -239,10 +244,10 @@ export default function BgRemoverPage() {
                     </Button>
                   </div>
                   
-                  {(user?.credits || 0) < selectedFiles.length && (
+                  {(user?.bgRemovalCredits || 0) < selectedFiles.length && (
                     <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl">
                       <p className="text-sm text-amber-700">
-                        Insufficient credits. You need {selectedFiles.length} credits but have {user?.credits || 0}.
+                        Insufficient BG removal credits. You need {selectedFiles.length} credits but have {user?.bgRemovalCredits || 0}.
                       </p>
                     </div>
                   )}
@@ -273,9 +278,9 @@ export default function BgRemoverPage() {
                   <span>Download all results as a ZIP file</span>
                 </li>
               </ul>
-              <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-                <p className="text-xs text-blue-700">
-                  💡 <strong>Tip:</strong> Each image costs 1 credit. Failed images won&apos;t be charged.
+              <div className="mt-4 p-3 bg-purple-50 rounded-lg">
+                <p className="text-xs text-purple-700">
+                  💡 <strong>Tip:</strong> Each image costs 1 BG removal credit. Failed images won&apos;t be charged.
                 </p>
               </div>
             </div>

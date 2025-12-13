@@ -1,29 +1,35 @@
 import { NextResponse } from 'next/server';
-import { getCurrentUser } from '@/lib/user';
+import { getSession } from '@/lib/auth-server';
+import { prisma } from '@/lib/prisma';
 
 export async function GET() {
   try {
-    const user = await getCurrentUser();
+    const session = await getSession();
     
+    if (!session || !session.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: {
+        credits: true,
+        bgRemovalCredits: true,
+      }
+    });
+
+    if (!user) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
     return NextResponse.json({
       credits: user.credits,
-      userId: user.id,
-      email: user.email,
-      name: user.name,
+      bgRemovalCredits: user.bgRemovalCredits,
     });
   } catch (error) {
     console.error('Error fetching user credits:', error);
-    
-    // Check if it's an authentication error
-    if (error instanceof Error && (error.message === 'User not authenticated' || error.message === 'User not found')) {
-      return NextResponse.json(
-        { error: 'Authentication required' },
-        { status: 401 }
-      );
-    }
-    
     return NextResponse.json(
-      { error: 'Failed to fetch user credits' },
+      { error: 'Failed to fetch credits' },
       { status: 500 }
     );
   }

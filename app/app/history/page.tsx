@@ -26,7 +26,11 @@ interface HistoryItem {
   // Common fields
   fileSize?: number;
   mimeType?: string;
+  fileUrl?: string;  // URL to downloadable file
   createdAt: string;
+  // Batch fields
+  isBatch?: boolean;
+  itemCount?: number;
 }
 
 interface HistoryResponse {
@@ -407,7 +411,7 @@ const HistoryPage = () => {
                         )}
                         
                         {/* Runway Content */}
-                        {item.type === 'runway' && (
+                        {item.type === 'runway' && !item.isBatch && (
                           <div className="space-y-2 mb-3">
                             {item.lowMotion && (
                               <div>
@@ -430,6 +434,18 @@ const HistoryPage = () => {
                           </div>
                         )}
                         
+                        {/* Batch Content */}
+                        {item.isBatch && (
+                          <div className="mb-3">
+                            <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200 rounded-lg">
+                              <HugeiconsIcon icon={FileIcon} size={16} className="text-blue-600" />
+                              <span className="text-sm font-semibold text-blue-900">
+                                {item.itemCount} images processed
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                        
                         {/* Metadata Content */}
                         {item.type === 'metadata' && (
                           <div className="space-y-2 mb-3">
@@ -448,45 +464,75 @@ const HistoryPage = () => {
                           </div>
                         )}
                         
-                        <div className="flex items-center text-xs text-slate-500 space-x-4">
-                          <div className="flex items-center">
-                            <HugeiconsIcon icon={Clock01Icon} size={16} className="mr-1" />
-                            {new Date(item.createdAt).toLocaleString()}
+                        {!item.isBatch && (
+                          <div className="flex items-center text-xs text-slate-500 space-x-4">
+                            <div className="flex items-center">
+                              <HugeiconsIcon icon={Clock01Icon} size={16} className="mr-1" />
+                              {new Date(item.createdAt).toLocaleString()}
+                            </div>
+                            {item.fileSize && (
+                              <div className="flex items-center">
+                                <HugeiconsIcon icon={FileIcon} size={16} className="mr-1" />
+                                {formatFileSize(item.fileSize)}
+                              </div>
+                            )}
+                            {item.mimeType && (
+                              <div className="flex items-center">
+                                <span className="font-medium">{item.mimeType.split('/')[1].toUpperCase()}</span>
+                              </div>
+                            )}
                           </div>
-                          {item.fileSize && (
+                        )}
+                        {item.isBatch && (
+                          <div className="flex items-center text-xs text-slate-500 space-x-4">
                             <div className="flex items-center">
-                              <HugeiconsIcon icon={FileIcon} size={16} className="mr-1" />
-                              {formatFileSize(item.fileSize)}
+                              <HugeiconsIcon icon={Clock01Icon} size={16} className="mr-1" />
+                              {new Date(item.createdAt).toLocaleString()}
                             </div>
-                          )}
-                          {item.mimeType && (
                             <div className="flex items-center">
-                              <span className="font-medium">{item.mimeType.split('/')[1].toUpperCase()}</span>
+                              <span className="font-medium text-blue-600">
+                                {item.type === 'metadata' ? 'CSV' : 'TXT'} FILE
+                              </span>
                             </div>
-                          )}
-                        </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center space-x-2 ml-4">
-                      <button 
-                        className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all"
-                        onClick={() => {
-                          const textToCopy = item.type === 'describe' ? item.description :
-                                           item.type === 'runway' ? `Low: ${item.lowMotion}\nMedium: ${item.mediumMotion}\nHigh: ${item.highMotion}` :
-                                           `Title: ${item.title}\nKeywords: ${item.keywords}\nCategory: ${item.category}`;
-                          navigator.clipboard.writeText(textToCopy || '');
-                        }}
-                        title="Copy content"
-                      >
-                        <HugeiconsIcon icon={Copy01Icon} size={18} />
-                      </button>
-                      <button 
-                        className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all"
-                        onClick={() => handleDownloadSingle(item)}
-                        title="Download as TXT"
-                      >
-                        <HugeiconsIcon icon={Download01Icon} size={18} />
-                      </button>
+                      {!item.isBatch && (
+                        <button 
+                          className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all"
+                          onClick={() => {
+                            const textToCopy = item.type === 'describe' ? item.description :
+                                             item.type === 'runway' ? `Low: ${item.lowMotion}\nMedium: ${item.mediumMotion}\nHigh: ${item.highMotion}` :
+                                             `Title: ${item.title}\nKeywords: ${item.keywords}\nCategory: ${item.category}`;
+                            navigator.clipboard.writeText(textToCopy || '');
+                          }}
+                          title="Copy content"
+                        >
+                          <HugeiconsIcon icon={Copy01Icon} size={18} />
+                        </button>
+                      )}
+                      {item.fileUrl ? (
+                        <a
+                          href={item.fileUrl}
+                          download
+                          className="p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-all inline-flex items-center"
+                          title={`Download ${item.isBatch ? 'batch ' : ''}${item.type === 'metadata' ? 'CSV' : 'TXT'} file`}
+                        >
+                          <HugeiconsIcon icon={Download01Icon} size={18} />
+                        </a>
+                      ) : (
+                        !item.isBatch && (
+                          <button 
+                            className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all"
+                            onClick={() => handleDownloadSingle(item)}
+                            title={`Generate and download ${item.type === 'metadata' ? 'CSV' : 'TXT'}`}
+                          >
+                            <HugeiconsIcon icon={Download01Icon} size={18} />
+                          </button>
+                        )
+                      )}
                     </div>
                   </div>
                 </div>

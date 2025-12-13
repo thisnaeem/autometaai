@@ -21,7 +21,8 @@ interface CreditPackage {
 
 type LocationType = 'pakistan' | 'international';
 
-const pakistanPackages: CreditPackage[] = [
+// General Credits Packages (Pakistan)
+const pakistanGeneralPackages: CreditPackage[] = [
   {
     name: 'Starter',
     credits: 500,
@@ -114,7 +115,98 @@ const pakistanPackages: CreditPackage[] = [
   },
 ];
 
-const internationalPackages: CreditPackage[] = [
+// BG Removal Credits Packages (Pakistan) - Different pricing
+const pakistanBgRemovalPackages: CreditPackage[] = [
+  {
+    name: 'Starter',
+    credits: 250,
+    price: 1000,
+    qrCode: '1000 Rs 500 Cradit.png',
+    currency: 'PKR',
+    icon: FlashIcon,
+    gradient: 'from-purple-500 to-pink-500',
+    features: [
+      '250 BG removals',
+      'Single & bulk processing',
+      'High quality output',
+      'Email support'
+    ]
+  },
+  {
+    name: 'Professional',
+    credits: 500,
+    price: 2000,
+    qrCode: '2000Rs 1000 Cradit.png',
+    popular: true,
+    currency: 'PKR',
+    icon: CrownIcon,
+    gradient: 'from-purple-500 to-indigo-500',
+    features: [
+      '500 BG removals',
+      'Single & bulk processing',
+      'High quality output',
+      'Priority processing',
+      'Priority support'
+    ]
+  },
+  {
+    name: 'Business',
+    credits: 750,
+    price: 3000,
+    qrCode: '3000Rs 1500 Cradit.png',
+    currency: 'PKR',
+    icon: Rocket01Icon,
+    gradient: 'from-pink-500 to-purple-500',
+    features: [
+      '750 BG removals',
+      'Single & bulk processing',
+      'High quality output',
+      'Priority processing',
+      'Priority support',
+      'Batch operations'
+    ]
+  },
+  {
+    name: 'Enterprise',
+    credits: 1000,
+    price: 4000,
+    qrCode: '4000 Rs 2000 Cradit.png',
+    currency: 'PKR',
+    icon: Rocket01Icon,
+    gradient: 'from-purple-600 to-pink-600',
+    features: [
+      '1000 BG removals',
+      'Single & bulk processing',
+      'High quality output',
+      'Priority processing',
+      'Priority support',
+      'Batch operations',
+      'API access'
+    ]
+  },
+  {
+    name: 'Ultimate',
+    credits: 1250,
+    price: 5000,
+    qrCode: '5000 Rs 2500 Cradit.png',
+    currency: 'PKR',
+    icon: Rocket01Icon,
+    gradient: 'from-fuchsia-500 to-purple-500',
+    features: [
+      '1250 BG removals',
+      'Single & bulk processing',
+      'High quality output',
+      'Priority processing',
+      'Priority support',
+      'Batch operations',
+      'API access',
+      'Custom integrations'
+    ]
+  },
+];
+
+// General Credits Packages (International)
+const internationalGeneralPackages: CreditPackage[] = [
   {
     name: 'Starter',
     credits: 500,
@@ -155,6 +247,7 @@ export default function BuyCreditsPage() {
   const router = useRouter();
   const [location, setLocation] = useState<LocationType>('pakistan');
   const [selectedPackage, setSelectedPackage] = useState<CreditPackage | null>(null);
+  const [creditType, setCreditType] = useState<'GENERAL' | 'BG_REMOVAL'>('GENERAL');
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -165,8 +258,47 @@ export default function BuyCreditsPage() {
     }
   }, [session, isPending, router]);
 
+  // BG Removal Credits Packages (International)
+  const internationalBgRemovalPackages: CreditPackage[] = [
+    {
+      name: 'Starter',
+      credits: 250,
+      price: 5,
+      qrCode: 'Binance 10$ equal to 1000 cradit.png',
+      currency: 'USD',
+      icon: FlashIcon,
+      gradient: 'from-purple-500 to-pink-500',
+      features: [
+        '250 BG removals',
+        'Single & bulk processing',
+        'High quality output',
+        'Email support'
+      ]
+    },
+    {
+      name: 'Professional',
+      credits: 500,
+      price: 10,
+      qrCode: 'Binance 10$ equal to 1000 cradit.png',
+      popular: true,
+      currency: 'USD',
+      icon: CrownIcon,
+      gradient: 'from-purple-500 to-indigo-500',
+      features: [
+        '500 BG removals',
+        'Single & bulk processing',
+        'High quality output',
+        'Priority processing',
+        'Priority support'
+      ]
+    },
+  ];
+
   const getCurrentPackages = () => {
-    return location === 'pakistan' ? pakistanPackages : internationalPackages;
+    if (creditType === 'BG_REMOVAL') {
+      return location === 'pakistan' ? pakistanBgRemovalPackages : internationalBgRemovalPackages;
+    }
+    return location === 'pakistan' ? pakistanGeneralPackages : internationalGeneralPackages;
   };
 
   const handleLocationChange = (newLocation: LocationType) => {
@@ -190,7 +322,8 @@ export default function BuyCreditsPage() {
       amount: selectedPackage.price.toString(),
       qrCode: selectedPackage.qrCode,
       currency: selectedPackage.currency,
-      location: location
+      location: location,
+      creditType: creditType
     });
     
     router.push(`/app/buy-credits/payment?${params.toString()}`);
@@ -226,6 +359,45 @@ export default function BuyCreditsPage() {
             <p className="text-red-700 font-medium text-center">{error}</p>
           </div>
         )}
+
+        {/* Credit Type Selector */}
+        <div className="mb-12">
+          <h2 className="text-2xl font-bold text-slate-900 mb-6 text-center">Select Credit Type</h2>
+          <div className="flex justify-center gap-4 max-w-3xl mx-auto">
+            <div
+              onClick={() => setCreditType('GENERAL')}
+              className={`flex-1 p-6 rounded-2xl border-2 cursor-pointer transition-all duration-300 ${
+                creditType === 'GENERAL'
+                  ? 'border-blue-500 bg-blue-50 shadow-xl'
+                  : 'border-slate-200 bg-white hover:border-blue-300'
+              }`}
+            >
+              <div className="text-center">
+                <div className="text-4xl mb-3">⚡</div>
+                <h3 className="text-xl font-bold text-slate-900 mb-2">General Credits</h3>
+                <p className="text-sm text-slate-600">
+                  For image description, metadata generation, runway prompts, and all other AI tools
+                </p>
+              </div>
+            </div>
+            <div
+              onClick={() => setCreditType('BG_REMOVAL')}
+              className={`flex-1 p-6 rounded-2xl border-2 cursor-pointer transition-all duration-300 ${
+                creditType === 'BG_REMOVAL'
+                  ? 'border-purple-500 bg-purple-50 shadow-xl'
+                  : 'border-slate-200 bg-white hover:border-purple-300'
+              }`}
+            >
+              <div className="text-center">
+                <div className="text-4xl mb-3">🎨</div>
+                <h3 className="text-xl font-bold text-slate-900 mb-2">BG Removal Credits</h3>
+                <p className="text-sm text-slate-600">
+                  Exclusively for background removal tool (single & bulk processing)
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
 
         {/* Location Selector */}
         <div className="mb-16">

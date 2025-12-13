@@ -12,17 +12,18 @@ datasource db {
 }
 
 model User {
-  id            String    @id @default(cuid())
-  email         String    @unique
-  emailVerified Boolean   @default(false)
-  name          String?
-  image         String?
-  role          UserRole  @default(USER)
-  credits       Int       @default(0)
-  isActive      Boolean   @default(true)
-  lastLoginAt   DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  email            String    @unique
+  emailVerified    Boolean   @default(false)
+  name             String?
+  image            String?
+  role             UserRole  @default(USER)
+  credits          Int       @default(0)
+  bgRemovalCredits Int       @default(0)
+  isActive         Boolean   @default(true)
+  lastLoginAt      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   // Relations
   imageDescriptions   ImageDescription[]
@@ -30,6 +31,7 @@ model User {
   metadataGenerations MetadataGeneration[]
   creditTransactions  CreditTransaction[]
   paymentRequests     PaymentRequest[]
+  batchOperations     BatchOperation[]
   accounts            Account[]
   sessions            Session[]
 
@@ -95,6 +97,7 @@ model ImageDescription {
   source      String   @default("ideogram") // ideogram, fallback, etc.
   fileSize    Int?
   mimeType    String?
+  fileUrl     String?  // URL to downloadable TXT file
   createdAt   DateTime @default(now())
 
   // Relations
@@ -127,6 +130,7 @@ model PaymentRequest {
   id                String        @id @default(cuid())
   userId            String
   creditsRequested  Int           // Number of credits to purchase
+  creditType        CreditType    @default(GENERAL) // Type of credits: GENERAL or BG_REMOVAL
   amount            Float         // Payment amount
   currency          String        @default("PKR") // Currency: PKR or USD
   location          String        @default("pakistan") // Location: pakistan or international
@@ -162,6 +166,7 @@ model RunwayPrompt {
   description String?  // For describe mode
   fileSize    Int?
   mimeType    String?
+  fileUrl     String?  // URL to downloadable TXT file
   createdAt   DateTime @default(now())
 
   // Relations
@@ -182,6 +187,7 @@ model MetadataGeneration {
   category    String
   fileSize    Int?
   mimeType    String?
+  fileUrl     String?  // URL to downloadable CSV file
   createdAt   DateTime @default(now())
 
   // Relations
@@ -205,6 +211,23 @@ model Settings {
   @@map("settings")
 }
 
+model BatchOperation {
+  id          String   @id @default(cuid())
+  userId      String
+  type        String   // "describe", "runway", "metadata"
+  itemCount   Int      // Number of items in this batch
+  fileUrl     String   // URL to the batch file (TXT or CSV)
+  createdAt   DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
+  @@index([userId, type])
+  @@map("batch_operations")
+}
+
 enum UserRole {
   USER
   ADMIN
@@ -219,6 +242,11 @@ enum CreditTransactionType {
   METADATA_GENERATION
   BG_REMOVAL
   ADMIN_ADJUSTMENT
+}
+
+enum CreditType {
+  GENERAL
+  BG_REMOVAL
 }
 
 enum PaymentStatus {

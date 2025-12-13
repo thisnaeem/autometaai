@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth-server';
 import { getApiKey } from '@/lib/getApiKey';
-import { deductCredits } from '@/lib/credits';
+import { BgCreditManager, InsufficientBgCreditsError } from '@/lib/bg-credit-manager';
 import { prisma } from '@/lib/prisma';
 
 export async function POST(request: NextRequest) {
@@ -12,23 +12,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get user and check credits
+    // Get user and check BG removal credits
     const user = await prisma.user.findUnique({
       where: { id: session.user.id },
-      select: { id: true, credits: true }
+      select: { id: true, bgRemovalCredits: true }
     });
 
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    if (user.credits < 1) {
+    const bgCreditManager = BgCreditManager.create(session.user.id);
+    const validation = await bgCreditManager.validateCredits(1);
+
+    if (!validation.isValid) {
       return NextResponse.json(
         { 
-          error: 'Insufficient credits',
+          error: 'Insufficient BG removal credits',
           required: 1,
-          available: user.credits,
-          message: 'You need at least 1 credit to remove background from an image.'
+          available: validation.available,
+          message: 'You need at least 1 BG removal credit to remove background from an image.'
         },
         { status: 402 }
       );
@@ -109,12 +112,12 @@ export async function POST(request: NextRequest) {
     // Get the processed image
     const imageBuffer = await response.arrayBuffer();
 
-    // Deduct 1 credit for successful processing
-    const creditResult = await deductCredits(user.id, 1);
+    // Deduct 1 BG removal credit for successful processing
+    const creditResult = await bgCreditManager.deductCredits(1, 'Background removed from image');
     
     if (!creditResult.success) {
       return NextResponse.json(
-        { error: creditResult.error || 'Failed to deduct credits' },
+        { error: creditResult.error || 'Failed to deduct BG removal credits' },
         { status: 402 }
       );
     }
@@ -124,7 +127,7 @@ export async function POST(request: NextRequest) {
       headers: {
         'Content-Type': 'image/png',
         'Content-Disposition': 'attachment; filename="image-no-bg.png"',
-        'X-Credits-Remaining': creditResult.credits.toString(),
+        'X-BgCredits-Remaining': creditResult.newBalance.toString(),
       },
     });
   } catch (error: unknown) {

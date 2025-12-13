@@ -18,6 +18,7 @@ interface PaymentRequest {
     email: string;
   };
   creditsRequested: number;
+  creditType: 'GENERAL' | 'BG_REMOVAL';
   amount: number;
   paymentMethod: string;
   transactionId: string | null;
@@ -186,6 +187,12 @@ export default function AdminPaymentsPage() {
                   {/* Payment Details */}
                   <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div className="col-span-2">
+                        <span className="font-medium text-gray-700">Credit Type:</span>
+                        <p className={`font-semibold ${request.creditType === 'BG_REMOVAL' ? 'text-purple-600' : 'text-blue-600'}`}>
+                          {request.creditType === 'BG_REMOVAL' ? '🎨 BG Removal Credits' : '⚡ General Credits'}
+                        </p>
+                      </div>
                       <div>
                         <span className="font-medium text-gray-700">Credits:</span>
                         <p className="text-gray-900">{request.creditsRequested}</p>
@@ -283,6 +290,12 @@ export default function AdminPaymentsPage() {
               <div>
                 <p className="text-sm text-gray-600">
                   <strong>User:</strong> {selectedRequest.user.name || selectedRequest.user.email}
+                </p>
+                <p className="text-sm text-gray-600">
+                  <strong>Credit Type:</strong> 
+                  <span className={`ml-2 font-semibold ${selectedRequest.creditType === 'BG_REMOVAL' ? 'text-purple-600' : 'text-blue-600'}`}>
+                    {selectedRequest.creditType === 'BG_REMOVAL' ? '🎨 BG Removal' : '⚡ General'}
+                  </span>
                 </p>
                 <p className="text-sm text-gray-600">
                   <strong>Credits:</strong> {selectedRequest.creditsRequested}

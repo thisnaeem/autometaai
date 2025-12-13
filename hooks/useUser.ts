@@ -7,6 +7,7 @@ interface User {
   name?: string;
   role: string;
   credits: number;
+  bgRemovalCredits: number;
 }
 
 interface UseUserReturn {
@@ -14,6 +15,7 @@ interface UseUserReturn {
   loading: boolean;
   error: string | null;
   updateCredits: (newCredits: number) => void;
+  updateBgCredits: (newBgCredits: number) => void;
 }
 
 export function useUser(): UseUserReturn {
@@ -37,6 +39,7 @@ export function useUser(): UseUserReturn {
         name: session.user.name || undefined,
         role: (session.user as any).role || 'USER',
         credits: (session.user as any).credits || 0,
+        bgRemovalCredits: (session.user as any).bgRemovalCredits || 0,
       });
       setError(null);
     }
@@ -51,10 +54,20 @@ export function useUser(): UseUserReturn {
     }
   };
 
+  const updateBgCredits = (newBgCredits: number) => {
+    if (user) {
+      setUser({
+        ...user,
+        bgRemovalCredits: newBgCredits
+      });
+    }
+  };
+
   return {
     user,
     loading: isPending,
     error,
     updateCredits,
+    updateBgCredits,
   };
 }

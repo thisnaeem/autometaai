@@ -21,6 +21,7 @@ function PaymentPageContent() {
   const [qrCode, setQrCode] = useState('');
   const [currency, setCurrency] = useState('PKR');
   const [location, setLocation] = useState('pakistan');
+  const [creditType, setCreditType] = useState<'GENERAL' | 'BG_REMOVAL'>('GENERAL');
   const [transactionId, setTransactionId] = useState('');
   const [screenshot, setScreenshot] = useState<File | null>(null);
   const [screenshotPreview, setScreenshotPreview] = useState<string | null>(null);
@@ -41,6 +42,7 @@ function PaymentPageContent() {
     const qrCodeParam = searchParams.get('qrCode');
     const currencyParam = searchParams.get('currency');
     const locationParam = searchParams.get('location');
+    const creditTypeParam = searchParams.get('creditType') as 'GENERAL' | 'BG_REMOVAL';
 
     if (!creditsParam || !amountParam) {
       router.push('/app/buy-credits');
@@ -52,6 +54,7 @@ function PaymentPageContent() {
     setQrCode(qrCodeParam || '');
     setCurrency(currencyParam || 'PKR');
     setLocation(locationParam || 'pakistan');
+    setCreditType(creditTypeParam || 'GENERAL');
   }, [session, isPending, router, searchParams]);
 
   const handleScreenshotChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -100,6 +103,7 @@ function PaymentPageContent() {
       formData.append('qrCode', qrCode);
       formData.append('currency', currency);
       formData.append('location', location);
+      formData.append('creditType', creditType);
 
       const response = await fetch('/api/payment/submit', {
         method: 'POST',
@@ -166,6 +170,12 @@ function PaymentPageContent() {
           <Card className="p-6 mb-6">
             <h2 className="text-xl font-semibold text-gray-900 mb-4">Payment Details</h2>
             <div className="space-y-3">
+              <div className="flex justify-between">
+                <span className="text-gray-600">Credit Type:</span>
+                <span className={`font-semibold ${creditType === 'BG_REMOVAL' ? 'text-purple-600' : 'text-blue-600'}`}>
+                  {creditType === 'BG_REMOVAL' ? '🎨 BG Removal Credits' : '⚡ General Credits'}
+                </span>
+              </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">Credits:</span>
                 <span className="font-semibold">{credits}</span>

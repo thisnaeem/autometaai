@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth-server';
 import { getApiKey } from '@/lib/getApiKey';
-import { deductCredits } from '@/lib/credits';
+import { BgCreditManager } from '@/lib/bg-credit-manager';
 import { prisma } from '@/lib/prisma';
 
 interface ProcessResult {
@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
 
     const user = await prisma.user.findUnique({
       where: { id: session.user.id },
-      select: { id: true, credits: true }
+      select: { id: true, bgRemovalCredits: true }
     });
 
     if (!user) {
@@ -34,13 +34,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No images provided' }, { status: 400 });
     }
 
-    if (user.credits < files.length) {
+    const bgCreditManager = BgCreditManager.create(session.user.id);
+    const validation = await bgCreditManager.validateCredits(files.length);
+
+    if (!validation.isValid) {
       return NextResponse.json(
         { 
-          error: 'Insufficient credits',
+          error: 'Insufficient BG removal credits',
           required: files.length,
-          available: user.credits,
-          message: `You need ${files.length} credits but only have ${user.credits}.`
+          available: validation.available,
+          message: `You need ${files.length} BG removal credits but only have ${validation.available}.`
         },
         { status: 402 }
       );
@@ -119,11 +122,14 @@ export async function POST(request: NextRequest) {
     }
 
     if (successCount > 0) {
-      const creditResult = await deductCredits(user.id, successCount);
+      const creditResult = await bgCreditManager.deductCredits(
+        successCount, 
+        `Bulk background removal: ${successCount} images`
+      );
       
       if (!creditResult.success) {
         return NextResponse.json(
-          { error: creditResult.error || 'Failed to deduct credits' },
+          { error: creditResult.error || 'Failed to deduct BG removal credits' },
           { status: 402 }
         );
       }
@@ -132,7 +138,7 @@ export async function POST(request: NextRequest) {
         results,
         successCount,
         totalCount: files.length,
-        remainingCredits: creditResult.credits
+        remainingBgCredits: creditResult.newBalance
       });
     }
 
@@ -140,7 +146,7 @@ export async function POST(request: NextRequest) {
       results,
       successCount: 0,
       totalCount: files.length,
-      remainingCredits: user.credits
+      remainingBgCredits: user.bgRemovalCredits
     });
 
   } catch (error: unknown) {

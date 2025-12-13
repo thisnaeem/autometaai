@@ -29,6 +29,7 @@ export async function POST(request: NextRequest) {
     const qrCode = formData.get('qrCode') as string;
     const currency = formData.get('currency') as string || 'PKR';
     const location = formData.get('location') as string || 'pakistan';
+    const creditType = formData.get('creditType') as string || 'GENERAL';
 
     // Validate required fields (screenshot is now optional)
     if (!credits || !amount || !transactionId) {
@@ -78,6 +79,11 @@ export async function POST(request: NextRequest) {
       screenshotUrl = await uploadToCloudinary(screenshot, 'payment-screenshots');
     }
 
+    // Validate credit type
+    if (!['GENERAL', 'BG_REMOVAL'].includes(creditType)) {
+      return NextResponse.json({ error: 'Invalid credit type' }, { status: 400 });
+    }
+
     // Determine payment method based on location
     const paymentMethod = location === 'pakistan' ? 'QR_CODE' : 'BINANCE';
 
@@ -86,6 +92,7 @@ export async function POST(request: NextRequest) {
       data: {
         userId: session.user.id,
         creditsRequested: creditsNum,
+        creditType: creditType as 'GENERAL' | 'BG_REMOVAL',
         amount: amountNum,
         currency: currency,
         location: location,

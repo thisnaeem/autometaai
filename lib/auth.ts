@@ -35,6 +35,11 @@ export const auth = betterAuth({
         defaultValue: 0,
         required: false,
       },
+      bgRemovalCredits: {
+        type: "number",
+        defaultValue: 0,
+        required: false,
+      },
       isActive: {
         type: "boolean",
         defaultValue: true,

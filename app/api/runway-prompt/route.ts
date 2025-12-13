@@ -45,6 +45,7 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const imageFile = formData.get('image') as File;
     const mode = (formData.get('mode') as string) || 'runway';
+    const skipHistory = formData.get('skipHistory') === 'true';
 
     if (!imageFile) {
       return NextResponse.json({ error: 'No image provided' }, { status: 400 });
@@ -161,24 +162,26 @@ OUTPUT FORMAT (JSON ONLY):
     const mediumPrompt = buildPrompt('medium', result.medium || '');
     const highPrompt = buildPrompt('high', result.high || '');
 
-    // Save to history
-    try {
-      await prisma.runwayPrompt.create({
-        data: {
-          userId: user.id,
-          filename: imageFile.name,
-          mode: mode,
-          lowMotion: mode === 'runway' ? lowPrompt : null,
-          mediumMotion: mode === 'runway' ? mediumPrompt : null,
-          highMotion: mode === 'runway' ? highPrompt : null,
-          description: mode === 'describe' ? content : null,
-          fileSize: imageFile.size,
-          mimeType: imageFile.type,
-        },
-      });
-    } catch (historyError) {
-      console.error('Failed to save runway prompt history:', historyError);
-      // Don't fail the request if history save fails
+    // Save to history only if not part of a batch
+    if (!skipHistory) {
+      try {
+        await prisma.runwayPrompt.create({
+          data: {
+            userId: user.id,
+            filename: imageFile.name,
+            mode: mode,
+            lowMotion: mode === 'runway' ? lowPrompt : null,
+            mediumMotion: mode === 'runway' ? mediumPrompt : null,
+            highMotion: mode === 'runway' ? highPrompt : null,
+            description: mode === 'describe' ? content : null,
+            fileSize: imageFile.size,
+            mimeType: imageFile.type,
+          },
+        });
+      } catch (historyError) {
+        console.error('Failed to save runway prompt history:', historyError);
+        // Don't fail the request if history save fails
+      }
     }
 
     return NextResponse.json({

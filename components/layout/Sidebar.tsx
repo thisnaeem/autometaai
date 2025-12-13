@@ -7,7 +7,7 @@ import { useSession, signOut } from '@/lib/auth-client';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/Button';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { TextIcon, Clock01Icon, ShoppingBasket01Icon, Logout01Icon, Image02Icon, VideoIcon, FileEditIcon, Invoice01Icon } from '@hugeicons/core-free-icons';
+import { TextIcon, Clock01Icon, ShoppingBasket01Icon, Logout01Icon, Image02Icon, VideoIcon, FileEditIcon, Invoice01Icon, FlashIcon, PaintBoardIcon } from '@hugeicons/core-free-icons';
 
 const Sidebar = () => {
   const pathname = usePathname();
@@ -103,14 +103,27 @@ const Sidebar = () => {
             <p className="text-xs text-slate-500 truncate">
               {session?.user?.email || 'user@example.com'}
             </p>
-            {(session?.user as any)?.credits !== undefined && (
-              <div className="flex items-center mt-1">
-                <div className="w-2 h-2 bg-green-400 rounded-full mr-1"></div>
-                <p className="text-xs text-emerald-600 font-semibold">
-                  {(session?.user as any).credits} credits
-                </p>
-              </div>
-            )}
+            {/* Credits Display - Side by Side */}
+            <div className="mt-2 flex items-center gap-3">
+              {/* General Credits */}
+              {(session?.user as any)?.credits !== undefined && (
+                <div className="flex items-center gap-1 px-2 py-1 bg-blue-50 rounded-lg border border-blue-200">
+                  <HugeiconsIcon icon={FlashIcon} size={14} className="text-blue-600" />
+                  <p className="text-xs text-blue-700 font-bold">
+                    {(session?.user as any).credits}
+                  </p>
+                </div>
+              )}
+              {/* BG Removal Credits */}
+              {(session?.user as any)?.bgRemovalCredits !== undefined && (
+                <div className="flex items-center gap-1 px-2 py-1 bg-purple-50 rounded-lg border border-purple-200">
+                  <HugeiconsIcon icon={PaintBoardIcon} size={14} className="text-purple-600" />
+                  <p className="text-xs text-purple-700 font-bold">
+                    {(session?.user as any).bgRemovalCredits}
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
         
