@@ -4,6 +4,7 @@ import { getApiKey } from '@/lib/getApiKey';
 import { deductCredits } from '@/lib/credits';
 import { prisma } from '@/lib/prisma';
 import OpenAI from 'openai';
+import { generateMetadataWithGemini } from '@/lib/gemini-service';
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,10 +13,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get user and check credits
+    // Get user with credits and AI provider preference
     const user = await prisma.user.findUnique({
       where: { id: session.user.id },
-      select: { id: true, credits: true }
     });
 
     if (!user) {
@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
 
     if (user.credits < 1) {
       return NextResponse.json(
-        { 
+        {
           error: 'Insufficient credits',
           required: 1,
           available: user.credits,
@@ -34,12 +34,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const apiKey = await getApiKey('OPENAI_API_KEY');
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: 'OpenAI API key not configured' },
-        { status: 500 }
-      );
+    // Get user's AI provider preference
+    const aiProvider = (user as any).aiProvider || 'openai';
+
+    // Check if using Gemini - verify API key
+    if (aiProvider === 'gemini') {
+      const geminiKey = await getApiKey('GEMINI_API_KEY');
+      if (!geminiKey) {
+        return NextResponse.json(
+          { error: 'Gemini API key not configured. Please ask admin to add it or switch to OpenAI.' },
+          { status: 500 }
+        );
+      }
+    } else {
+      // Using OpenAI - verify API key
+      const openaiKey = await getApiKey('OPENAI_API_KEY');
+      if (!openaiKey) {
+        return NextResponse.json(
+          { error: 'OpenAI API key not configured' },
+          { status: 500 }
+        );
+      }
     }
 
     const formData = await request.formData();
@@ -49,7 +64,7 @@ export async function POST(request: NextRequest) {
     const titleLength = parseInt(formData.get('titleLength') as string) || 150;
     const keywordCount = parseInt(formData.get('keywordCount') as string) || 45;
     const singleWordKeywords = formData.get('singleWordKeywords') === 'true';
-    
+
     // Advanced settings
     const isSilhouette = formData.get('isSilhouette') === 'true';
     const customPrompt = (formData.get('customPrompt') as string) || '';
@@ -62,42 +77,66 @@ export async function POST(request: NextRequest) {
     }
 
     // Convert image to base64
+    // Convert image to base64 (only needed for OpenAI)
     const bytes = await imageFile.arrayBuffer();
     const buffer = Buffer.from(bytes);
     const base64Image = buffer.toString('base64');
     let mimeType = imageFile.type || 'image/jpeg';
-    
+
     // For SVG, ensure correct mime type
     if (isSvg || imageFile.name.toLowerCase().endsWith('.svg')) {
       mimeType = 'image/svg+xml';
     }
-    
+
     // For video, we're using the extracted frame (JPEG)
     if (isVideo) {
       mimeType = 'image/jpeg';
     }
 
-    const openai = new OpenAI({ apiKey });
-
     const categories = `1. Animals, 2. Buildings and Architecture, 3. Business, 4. Drinks, 5. The Environment, 6. States of Mind, 7. Food, 8. Graphic Resources, 9. Hobbies and Leisure, 10. Industry, 11. Landscape, 12. Lifestyle, 13. People, 14. Plants and Flowers, 15. Culture and Religion, 16. Science, 17. Social Issues, 18. Sports, 19. Technology, 20. Transport, 21. Travel`;
 
-    const keywordInstruction = singleWordKeywords
-      ? `Generate exactly ${keywordCount} SINGLE-WORD keywords only.`
-      : `Generate exactly ${keywordCount} relevant keywords.`;
+    let title = '';
+    let keywords = '';
+    let categoryId = 1;
 
-    // Build instructions array
-    const instructions: string[] = [];
-    if (isSilhouette) instructions.push('This is a silhouette.');
-    if (whiteBackground) instructions.push('This has a white background.');
-    if (transparentBackground) instructions.push('This has a transparent background.');
-    if (isVideo) instructions.push('This is a frame from a video. Generate metadata for the video content.');
-    if (isSvg) instructions.push('This is an SVG vector graphic.');
-    
-    const instructionsText = instructions.length > 0 ? `\nInfo: ${instructions.join(' ')}` : '';
-    const customPromptText = customPrompt ? `\nCustom: ${customPrompt}` : '';
-    const prohibitedText = prohibitedWords ? `\nAvoid these words: ${prohibitedWords}` : '';
+    if (aiProvider === 'gemini') {
+      // Use Gemini for metadata generation
+      const geminiResult = await generateMetadataWithGemini(imageFile, {
+        titleLength,
+        keywordCount,
+        singleWordKeywords,
+        isSilhouette,
+        customPrompt,
+        whiteBackground,
+        transparentBackground,
+        prohibitedWords,
+      });
 
-    const prompt = `Analyze this image for Adobe Stock metadata.
+      title = (geminiResult.title || '').replace(/[^\w\s]/g, '').trim();
+      keywords = (geminiResult.keywords || '').replace(/[^\w\s,]/g, '').trim();
+      categoryId = geminiResult.category_id || 1;
+    } else {
+      // Use OpenAI for metadata generation
+      const apiKey = await getApiKey('OPENAI_API_KEY');
+      const openai = new OpenAI({ apiKey: apiKey! });
+
+      const keywordInstruction = singleWordKeywords
+        ? `Generate exactly ${keywordCount} SINGLE-WORD keywords only.`
+        : `Generate exactly ${keywordCount} relevant keywords.`;
+
+      // Build instructions array
+      const instructions: string[] = [];
+      if (isSilhouette) instructions.push('This is a silhouette.');
+      if (whiteBackground) instructions.push('This has a white background.');
+      if (transparentBackground) instructions.push('This has a transparent background.');
+      if (isVideo) instructions.push('This is a frame from a video. Generate metadata for the video content.');
+      if (isSvg) instructions.push('This is an SVG vector graphic.');
+
+      const instructionsText = instructions.length > 0 ? `\nInfo: ${instructions.join(' ')}` : '';
+      const customPromptText = customPrompt ? `\nCustom: ${customPrompt}` : '';
+      const prohibitedText = prohibitedWords ? `\nAvoid these words: ${prohibitedWords}` : '';
+
+      const prompt = `Analyze this image for Adobe Stock metadata.
 
 1. Generate a descriptive Title (aim for ${titleLength} characters). To meet this length, describe the subject, action, setting, lighting, and mood in detail. Do not be concise.
    STRICTLY FORBIDDEN: Do NOT use any special characters (like - / : ; ( ) & !) in the Title. Use ONLY letters, numbers, and spaces.
@@ -108,58 +147,44 @@ export async function POST(request: NextRequest) {
 
 3. Choose Category ID from: ${categories}${instructionsText}${customPromptText}${prohibitedText}
 
-Example 1:
-Image: A happy young child with curly blonde hair sits on grass, surrounded by two playful baby goats. Sunlight filters through the trees.
-Output: {
-  "title": "Joyful child with adorable baby goats on a sunny farm",
-  "keywords": "child,kid,girl,blonde hair,curly hair,smiling,happy,joyful,goat,baby goat,kid goat,farm,animal,pet,outdoors,grass,sunny,daylight,summer,countryside,rural,nature,cute,adorable,young,childhood,innocence,playful,livestock,farm animal",
-  "category_id": 1
-}
-
-Example 2:
-Image: A man in a suit and glasses smiles while holding a tablet, standing in a dealership filled with tractors.
-Output: {
-  "title": "Smiling businessman holding tablet in agricultural machinery dealership",
-  "keywords": "businessman,tablet,dealership,agriculture,machinery,tractors,farming,equipment,sales,retail,professional,technology,modern,industry,rural,outdoors,transportation,vehicles,heavy equipment,farm equipment,agricultural vehicles,business owner,manager,employee,customer service,showroom,indoor,man,glasses,smiling,confident",
-  "category_id": 3
-}
-
 Return JSON with: "title", "keywords", "category_id" (number).`;
 
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: prompt },
-            {
-              type: 'image_url',
-              image_url: {
-                url: `data:${mimeType};base64,${base64Image}`,
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: prompt },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: `data:${mimeType};base64,${base64Image}`,
+                },
               },
-            },
-          ],
-        },
-      ],
-      response_format: { type: 'json_object' },
-      max_tokens: 800,
-    });
+            ],
+          },
+        ],
+        response_format: { type: 'json_object' },
+        max_tokens: 800,
+      });
 
-    const content = response.choices[0]?.message?.content;
-    if (!content) {
-      throw new Error('No response from OpenAI');
+      const content = response.choices[0]?.message?.content;
+      if (!content) {
+        throw new Error('No response from OpenAI');
+      }
+
+      const result = JSON.parse(content);
+      title = (result.title || '').replace(/[^\w\s]/g, '').trim();
+      keywords = (result.keywords || '').replace(/[^\w\s,]/g, '').trim();
+      categoryId = result.category_id || 1;
     }
 
-    const result = JSON.parse(content);
-
-    // Clean and validate
-    let title = (result.title || '').replace(/[^\w\s]/g, '').trim();
+    // Validate and trim
     if (title.length > titleLength) {
       title = title.slice(0, titleLength);
     }
 
-    let keywords = (result.keywords || '').replace(/[^\w\s,]/g, '').trim();
     const keywordList = keywords.split(',').map((k: string) => k.trim()).filter((k: string) => k);
     if (keywordList.length > keywordCount) {
       keywords = keywordList.slice(0, keywordCount).join(',');
@@ -167,12 +192,11 @@ Return JSON with: "title", "keywords", "category_id" (number).`;
       keywords = keywordList.join(',');
     }
 
-    const categoryId = result.category_id || 1;
     const categoryName = categories.split(',')[categoryId - 1]?.trim() || 'General';
 
     // Deduct 1 credit for successful processing
     const creditResult = await deductCredits(user.id, 1);
-    
+
     if (!creditResult.success) {
       return NextResponse.json(
         { error: creditResult.error || 'Failed to deduct credits' },
@@ -182,23 +206,8 @@ Return JSON with: "title", "keywords", "category_id" (number).`;
 
     const categoryString = `${categoryId}. ${categoryName}`;
 
-    // Save to history
-    try {
-      await prisma.metadataGeneration.create({
-        data: {
-          userId: user.id,
-          filename: imageFile.name,
-          title,
-          keywords,
-          category: categoryString,
-          fileSize: imageFile.size,
-          mimeType: imageFile.type,
-        },
-      });
-    } catch (historyError) {
-      console.error('Failed to save metadata generation history:', historyError);
-      // Don't fail the request if history save fails
-    }
+    // Note: History is saved via batch operations only (like Runway Prompt)
+    // Individual records are not saved to avoid duplicates in history
 
     return NextResponse.json({
       title,

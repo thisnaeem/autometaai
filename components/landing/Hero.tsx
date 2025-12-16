@@ -56,7 +56,7 @@ export default function Hero() {
             transition={{ duration: 0.8, delay: 0.2 }}
             className="text-5xl sm:text-7xl lg:text-8xl font-bold text-slate-900 mb-6 leading-tight"
           >
-            AutometaAI
+            csvout
           </motion.h1>
 
           <motion.p
@@ -74,7 +74,7 @@ export default function Hero() {
             transition={{ duration: 0.8, delay: 0.5 }}
             className="text-lg sm:text-xl text-slate-600 mb-12 max-w-3xl mx-auto"
           >
-            Create AI-powered titles, descriptions, and keywords for Adobe Stock, Shutterstock & more. 
+            Create AI-powered titles, descriptions, and keywords for Adobe Stock, Shutterstock & more.
             Transform images into prompts for Ideogram, Runway ML, and other AI platforms.
           </motion.p>
 
@@ -85,9 +85,9 @@ export default function Hero() {
             className="flex flex-col sm:flex-row gap-4 justify-center items-center"
           >
             <Link href="/app/describe">
-              <Button 
-                variant="primary" 
-                size="lg" 
+              <Button
+                variant="primary"
+                size="lg"
                 className="w-full sm:w-auto bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white px-8 py-4 text-lg font-semibold rounded-xl shadow-xl hover:shadow-2xl transition-all duration-300"
               >
                 <HugeiconsIcon icon={FlashIcon} size={24} className="mr-2" />
@@ -95,9 +95,9 @@ export default function Hero() {
               </Button>
             </Link>
             <Link href="#features">
-              <Button 
-                variant="outline" 
-                size="lg" 
+              <Button
+                variant="outline"
+                size="lg"
                 className="w-full sm:w-auto border-2 border-slate-300 text-slate-700 hover:bg-slate-50 px-8 py-4 text-lg font-semibold rounded-xl"
               >
                 <HugeiconsIcon icon={Image02Icon} size={24} className="mr-2" />

@@ -59,7 +59,7 @@ export default function MetadataGenPage() {
       video.muted = true;
       video.playsInline = true;
       video.currentTime = 1.0;
-      
+
       video.onseeked = () => {
         const canvas = document.createElement('canvas');
         canvas.width = video.videoWidth;
@@ -73,12 +73,12 @@ export default function MetadataGenPage() {
         }
         URL.revokeObjectURL(video.src);
       };
-      
+
       video.onerror = () => {
         reject(new Error('Failed to load video'));
         URL.revokeObjectURL(video.src);
       };
-      
+
       video.load();
     });
   };
@@ -90,9 +90,9 @@ export default function MetadataGenPage() {
     for (const file of acceptedFiles) {
       const isVideo = file.type.startsWith('video/');
       const isSvg = file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg');
-      
+
       let preview = '';
-      
+
       try {
         if (isVideo) {
           preview = await extractVideoFrame(file);
@@ -201,22 +201,18 @@ export default function MetadataGenPage() {
           setResults([...newResults]);
         }
 
-        // After all processed, create batch file
-        try {
-          const bulkFormData = new FormData();
-          selectedFiles.forEach((file) => {
-            bulkFormData.append('images', file);
-          });
-          bulkFormData.append('titleLength', titleLength.toString());
-          bulkFormData.append('keywordCount', keywordCount.toString());
-          bulkFormData.append('singleWordKeywords', singleWordKeywords.toString());
-
-          await fetch('/api/generate-metadata/bulk', {
-            method: 'POST',
-            body: bulkFormData,
-          });
-        } catch (err) {
-          console.error('Failed to create batch file:', err);
+        // After all processed, create batch history record (without re-processing)
+        const successfulResults = newResults.filter(r => !r.error);
+        if (successfulResults.length > 0) {
+          try {
+            await fetch('/api/generate-metadata/batch-save', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ results: successfulResults }),
+            });
+          } catch (err) {
+            console.error('Failed to save batch history:', err);
+          }
         }
       } else {
         // Use single API for one image
@@ -245,15 +241,33 @@ export default function MetadataGenPage() {
         }
 
         const data = await response.json();
-        setResults([
+        const newResults = [
           {
             filename: file.name,
             title: data.title,
             keywords: data.keywords,
             category: data.category,
           },
-        ]);
+        ];
+        setResults(newResults);
         setProgress(100);
+
+        // Create batch record for single file (like Runway Prompt does)
+        try {
+          const bulkFormData = new FormData();
+          bulkFormData.append('images', file);
+          bulkFormData.append('titleLength', titleLength.toString());
+          bulkFormData.append('keywordCount', keywordCount.toString());
+          bulkFormData.append('singleWordKeywords', singleWordKeywords.toString());
+
+          await fetch('/api/generate-metadata/batch-save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ results: newResults }),
+          });
+        } catch (err) {
+          console.error('Failed to save batch history:', err);
+        }
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'An error occurred while processing images');
@@ -354,16 +368,15 @@ export default function MetadataGenPage() {
                       const file = selectedFiles[index];
                       const isVideo = file?.isVideo;
                       const isSvg = file?.isSvg;
-                      
+
                       return (
                         <div key={index} className="relative group">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src={url}
                             alt={`Preview of ${file?.name}`}
-                            className={`w-full h-16 object-cover rounded-lg border border-slate-200 ${
-                              isSvg ? 'bg-white p-1' : ''
-                            }`}
+                            className={`w-full h-16 object-cover rounded-lg border border-slate-200 ${isSvg ? 'bg-white p-1' : ''
+                              }`}
                           />
                           {isVideo && (
                             <div className="absolute bottom-1 right-1 bg-black/70 text-white text-[8px] px-1 py-0.5 rounded font-bold">
@@ -628,17 +641,16 @@ export default function MetadataGenPage() {
               <div className="relative">
                 {/* Background Rectangle */}
                 <div className="absolute inset-0 bg-gradient-to-r from-slate-50 via-slate-100 to-slate-50 rounded-xl -z-10"></div>
-                
+
                 {/* Platforms in one line */}
                 <div className="flex items-center justify-between gap-4 p-4">
                   {STOCK_PLATFORMS.map((platform) => (
                     <div
                       key={platform.id}
-                      className={`relative flex-1 p-4 rounded-lg border-2 flex items-center justify-center transition-all duration-300 ${
-                        platform.selected
-                          ? 'border-cyan-500 bg-white shadow-lg scale-105'
-                          : 'border-transparent bg-white/50 opacity-60'
-                      } ${platform.locked ? 'cursor-not-allowed' : 'cursor-pointer hover:scale-105'}`}
+                      className={`relative flex-1 p-4 rounded-lg border-2 flex items-center justify-center transition-all duration-300 ${platform.selected
+                        ? 'border-cyan-500 bg-white shadow-lg scale-105'
+                        : 'border-transparent bg-white/50 opacity-60'
+                        } ${platform.locked ? 'cursor-not-allowed' : 'cursor-pointer hover:scale-105'}`}
                     >
                       {/* Platform Logo */}
                       <div className="relative h-10 w-full flex items-center justify-center">
@@ -659,14 +671,14 @@ export default function MetadataGenPage() {
                           <img src="/freepik.png" alt="Getty Images" className="h-10 w-auto object-contain" />
                         )}
                       </div>
-                      
+
                       {/* Coming Soon Badge */}
                       {platform.locked && (
                         <div className="absolute -top-2 -right-2 bg-slate-400 text-white text-[10px] px-2 py-1 rounded-full font-bold">
                           Soon
                         </div>
                       )}
-                      
+
                       {/* Selected Indicator */}
                       {platform.selected && (
                         <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-8 h-1 bg-cyan-500 rounded-full"></div>
@@ -738,7 +750,7 @@ export default function MetadataGenPage() {
                     const file = selectedFiles[index];
                     const isVideo = file?.isVideo;
                     const isSvg = file?.isSvg;
-                    
+
                     return (
                       <div key={index} className="p-4 bg-slate-50 rounded-xl border border-slate-200">
                         <div className="flex items-center gap-2 mb-3">

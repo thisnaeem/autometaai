@@ -58,7 +58,7 @@ export default function Stats() {
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-cyan-600"> Thousands</span>
           </h2>
           <p className="text-xl text-slate-600 max-w-3xl mx-auto">
-            Join the community of creators who are transforming their workflow with AutometaAI
+            Join the community of creators who are transforming their workflow with csvout
           </p>
         </motion.div>
 
@@ -75,20 +75,20 @@ export default function Stats() {
               <div className="relative h-full p-8 bg-white rounded-2xl border border-slate-200 hover:border-blue-300 hover:shadow-xl transition-all duration-300 text-center">
                 {/* Gradient overlay on hover */}
                 <div className={`absolute inset-0 bg-gradient-to-br ${stat.gradient} opacity-0 group-hover:opacity-5 transition-opacity duration-300 rounded-2xl`} />
-                
+
                 <div className="relative z-10">
                   <div className={`inline-flex p-4 rounded-xl bg-gradient-to-br ${stat.gradient} mb-6 shadow-lg`}>
                     <HugeiconsIcon icon={stat.icon} size={40} className="text-white" />
                   </div>
-                  
+
                   <div className="text-5xl font-bold text-slate-900 mb-2">
                     {stat.value}
                   </div>
-                  
+
                   <h3 className="text-xl font-bold text-slate-900 mb-3">
                     {stat.label}
                   </h3>
-                  
+
                   <p className="text-slate-600 text-sm">
                     {stat.description}
                   </p>

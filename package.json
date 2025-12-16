@@ -16,6 +16,7 @@
     "deploy": "prisma migrate deploy && prisma generate"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@hugeicons/core-free-icons": "^1.1.0",
     "@hugeicons/react": "^1.1.1",
     "@prisma/client": "^6.16.2",

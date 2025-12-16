@@ -13,7 +13,7 @@ const plans = [
     icon: FlashIcon,
     price: 'Free',
     period: 'forever',
-    description: 'Perfect for trying out AutometaAI',
+    description: 'Perfect for trying out csvout',
     features: [
       '10 images per month',
       'Basic metadata generation',

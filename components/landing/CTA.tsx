@@ -53,7 +53,7 @@ export default function CTA() {
           </h2>
 
           <p className="text-xl sm:text-2xl text-blue-100 mb-12 max-w-3xl mx-auto">
-            Join thousands of creators who are already using AutometaAI to optimize their content and boost their visibility.
+            Join thousands of creators who are already using csvout to optimize their content and boost their visibility.
           </p>
 
           <div className="flex justify-center">

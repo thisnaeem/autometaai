@@ -10,7 +10,7 @@ const urbanist = Urbanist({
 });
 
 export const metadata: Metadata = {
-  title: "AutometaAI - AI-Powered Metadata & Prompt Generation",
+  title: "csvout - AI-Powered Metadata & Prompt Generation",
   description: "Generate perfect metadata for stock platforms like Adobe Stock and Shutterstock. Transform images into prompts for Ideogram, Runway ML, and more.",
 };
 

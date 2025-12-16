@@ -7,7 +7,7 @@ import { useSession, signOut } from '@/lib/auth-client';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/Button';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { TextIcon, Clock01Icon, ShoppingBasket01Icon, Logout01Icon, Image02Icon, VideoIcon, FileEditIcon, Invoice01Icon, FlashIcon, PaintBoardIcon } from '@hugeicons/core-free-icons';
+import { TextIcon, Clock01Icon, ShoppingBasket01Icon, Logout01Icon, Image02Icon, VideoIcon, FileEditIcon, Invoice01Icon, FlashIcon, PaintBoardIcon, Settings02Icon } from '@hugeicons/core-free-icons';
 
 const Sidebar = () => {
   const pathname = usePathname();
@@ -48,6 +48,11 @@ const Sidebar = () => {
       name: 'Payment Requests',
       href: '/app/payment-requests',
       icon: <HugeiconsIcon icon={Invoice01Icon} size={20} strokeWidth={2} />
+    },
+    {
+      name: 'Settings',
+      href: '/app/settings',
+      icon: <HugeiconsIcon icon={Settings02Icon} size={20} strokeWidth={2} />
     }
   ];
 
@@ -56,7 +61,7 @@ const Sidebar = () => {
       {/* Logo */}
       <div className="flex items-center justify-center h-16 px-4 border-b border-slate-200 bg-white/80 backdrop-blur-sm">
         <h1 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
-          AutometaAI
+          csvout
         </h1>
       </div>
 
@@ -126,7 +131,7 @@ const Sidebar = () => {
             </div>
           </div>
         </div>
-        
+
         {/* Logout Button */}
         <Button
           variant="outline"

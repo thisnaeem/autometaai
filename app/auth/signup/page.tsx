@@ -72,7 +72,7 @@ export default function SignUpPage() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent mb-2">
-            AutometaAI
+            csvout
           </h1>
           <p className="text-slate-600">Create your account</p>
         </div>

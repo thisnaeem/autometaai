@@ -4,6 +4,7 @@ import { getApiKey } from '@/lib/getApiKey';
 import { deductCredits } from '@/lib/credits';
 import { prisma } from '@/lib/prisma';
 import OpenAI from 'openai';
+import { generateRunwayPromptsWithGemini } from '@/lib/gemini-service';
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,10 +13,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get user and check credits
+    // Get user with credits and AI provider preference
     const user = await prisma.user.findUnique({
       where: { id: session.user.id },
-      select: { id: true, credits: true }
     });
 
     if (!user) {
@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
 
     if (user.credits < 1) {
       return NextResponse.json(
-        { 
+        {
           error: 'Insufficient credits',
           required: 1,
           available: user.credits,
@@ -34,12 +34,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const apiKey = await getApiKey('OPENAI_API_KEY');
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: 'OpenAI API key not configured' },
-        { status: 500 }
-      );
+    // Get user's AI provider preference
+    const aiProvider = (user as any).aiProvider || 'openai';
+
+    // Check if using Gemini - verify API key
+    if (aiProvider === 'gemini') {
+      const geminiKey = await getApiKey('GEMINI_API_KEY');
+      if (!geminiKey) {
+        return NextResponse.json(
+          { error: 'Gemini API key not configured. Please ask admin to add it or switch to OpenAI.' },
+          { status: 500 }
+        );
+      }
+    } else {
+      // Using OpenAI - verify API key
+      const openaiKey = await getApiKey('OPENAI_API_KEY');
+      if (!openaiKey) {
+        return NextResponse.json(
+          { error: 'OpenAI API key not configured' },
+          { status: 500 }
+        );
+      }
     }
 
     const formData = await request.formData();
@@ -51,15 +66,28 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No image provided' }, { status: 400 });
     }
 
-    // Convert image to base64
-    const bytes = await imageFile.arrayBuffer();
-    const buffer = Buffer.from(bytes);
-    const base64Image = buffer.toString('base64');
-    const mimeType = imageFile.type || 'image/jpeg';
+    let lowResult = '';
+    let mediumResult = '';
+    let highResult = '';
 
-    const openai = new OpenAI({ apiKey });
+    if (aiProvider === 'gemini') {
+      // Use Gemini for runway prompts
+      const geminiResult = await generateRunwayPromptsWithGemini(imageFile);
+      lowResult = geminiResult.low || '';
+      mediumResult = geminiResult.medium || '';
+      highResult = geminiResult.high || '';
+    } else {
+      // Use OpenAI for runway prompts
+      const apiKey = await getApiKey('OPENAI_API_KEY');
+      const openai = new OpenAI({ apiKey: apiKey! });
 
-    const prompt = `You see a still image. Your task is to describe motion at three intensities: low, medium, and high.
+      // Convert image to base64
+      const bytes = await imageFile.arrayBuffer();
+      const buffer = Buffer.from(bytes);
+      const base64Image = buffer.toString('base64');
+      const mimeType = imageFile.type || 'image/jpeg';
+
+      const prompt = `You see a still image. Your task is to describe motion at three intensities: low, medium, and high.
 
 ABSOLUTE RULES:
 - Describe ONLY motion of things that are visible or obviously implied in the image.
@@ -99,37 +127,41 @@ OUTPUT FORMAT (JSON ONLY):
   "high": "<high-motion clause>"
 }`;
 
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: prompt },
-            {
-              type: 'image_url',
-              image_url: {
-                url: `data:${mimeType};base64,${base64Image}`,
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: prompt },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: `data:${mimeType};base64,${base64Image}`,
+                },
               },
-            },
-          ],
-        },
-      ],
-      response_format: { type: 'json_object' },
-      max_tokens: 500,
-    });
+            ],
+          },
+        ],
+        response_format: { type: 'json_object' },
+        max_tokens: 500,
+      });
 
-    const content = response.choices[0]?.message?.content;
-    if (!content) {
-      throw new Error('No response from OpenAI');
+      const content = response.choices[0]?.message?.content;
+      if (!content) {
+        throw new Error('No response from OpenAI');
+      }
+
+      const result = JSON.parse(content);
+      lowResult = result.low || '';
+      mediumResult = result.medium || '';
+      highResult = result.high || '';
     }
-
-    const result = JSON.parse(content);
 
     // Build final Runway prompts with camera movements
     const buildPrompt = (motion: string, clause: string) => {
       if (!clause) return '';
-      
+
       // Ensure clause starts naturally
       if (!/^(the|a|an)\b/i.test(clause)) {
         clause = 'the subject ' + clause;
@@ -150,7 +182,7 @@ OUTPUT FORMAT (JSON ONLY):
 
     // Deduct 1 credit for successful processing
     const creditResult = await deductCredits(user.id, 1);
-    
+
     if (!creditResult.success) {
       return NextResponse.json(
         { error: creditResult.error || 'Failed to deduct credits' },
@@ -158,9 +190,9 @@ OUTPUT FORMAT (JSON ONLY):
       );
     }
 
-    const lowPrompt = buildPrompt('low', result.low || '');
-    const mediumPrompt = buildPrompt('medium', result.medium || '');
-    const highPrompt = buildPrompt('high', result.high || '');
+    const lowPrompt = buildPrompt('low', lowResult);
+    const mediumPrompt = buildPrompt('medium', mediumResult);
+    const highPrompt = buildPrompt('high', highResult);
 
     // Save to history only if not part of a batch
     if (!skipHistory) {
@@ -173,7 +205,7 @@ OUTPUT FORMAT (JSON ONLY):
             lowMotion: mode === 'runway' ? lowPrompt : null,
             mediumMotion: mode === 'runway' ? mediumPrompt : null,
             highMotion: mode === 'runway' ? highPrompt : null,
-            description: mode === 'describe' ? content : null,
+            description: null,
             fileSize: imageFile.size,
             mimeType: imageFile.type,
           },

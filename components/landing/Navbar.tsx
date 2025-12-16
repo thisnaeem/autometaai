@@ -30,11 +30,10 @@ export default function Navbar() {
       initial={{ y: -100 }}
       animate={{ y: 0 }}
       transition={{ duration: 0.5 }}
-      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-        isScrolled
+      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${isScrolled
           ? 'bg-white/90 backdrop-blur-xl border-b border-slate-200 shadow-sm'
           : 'bg-transparent'
-      }`}
+        }`}
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-20">
@@ -43,7 +42,7 @@ export default function Navbar() {
             <div className="p-2 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl group-hover:scale-110 transition-transform duration-300 shadow-lg">
               <HugeiconsIcon icon={SparklesIcon} size={24} className="text-white" />
             </div>
-            <span className="text-2xl font-bold text-slate-900">AutometaAI</span>
+            <span className="text-2xl font-bold text-slate-900">csvout</span>
           </Link>
 
           {/* Desktop Navigation */}

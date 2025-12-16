@@ -44,10 +44,10 @@ export default function Footer() {
               <div className="p-2 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl shadow-lg">
                 <HugeiconsIcon icon={SparklesIcon} size={24} className="text-white" />
               </div>
-              <span className="text-2xl font-bold text-white">AutometaAI</span>
+              <span className="text-2xl font-bold text-white">csvout</span>
             </Link>
             <p className="text-slate-400 mb-6 max-w-sm">
-              AI-powered metadata generation and image-to-prompt conversion for stock platforms and AI tools. 
+              AI-powered metadata generation and image-to-prompt conversion for stock platforms and AI tools.
               Optimize your content workflow today.
             </p>
             <div className="flex gap-4">
@@ -120,7 +120,7 @@ export default function Footer() {
         <div className="pt-8 border-t border-slate-800">
           <div className="flex flex-col md:flex-row justify-between items-center gap-4">
             <p className="text-slate-400 text-sm">
-              © {new Date().getFullYear()} AutometaAI. All rights reserved.
+              © {new Date().getFullYear()} csvout. All rights reserved.
             </p>
             <div className="flex gap-6 text-sm">
               <a href="#" className="text-slate-400 hover:text-white transition-colors">

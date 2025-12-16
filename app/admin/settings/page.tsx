@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 interface ApiKeys {
   IDEOGRAM_API_KEY: string;
   OPENAI_API_KEY: string;
+  GEMINI_API_KEY: string;
   PHOTOROOM_API_KEY: string;
 }
 
@@ -16,10 +17,11 @@ export default function AdminSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  
+
   const [apiKeys, setApiKeys] = useState<ApiKeys>({
     IDEOGRAM_API_KEY: '',
     OPENAI_API_KEY: '',
+    GEMINI_API_KEY: '',
     PHOTOROOM_API_KEY: ''
   });
 
@@ -33,20 +35,21 @@ export default function AdminSettingsPage() {
       if (response.ok) {
         const data = await response.json();
         const settings = data.settings;
-        
+
         // Load existing API keys
         const newKeys: ApiKeys = {
           IDEOGRAM_API_KEY: '',
           OPENAI_API_KEY: '',
+          GEMINI_API_KEY: '',
           PHOTOROOM_API_KEY: ''
         };
-        
+
         settings.forEach((setting: { key: string; value: string }) => {
           if (setting.key in newKeys) {
             newKeys[setting.key as keyof ApiKeys] = setting.value;
           }
         });
-        
+
         setApiKeys(newKeys);
       }
     } catch (error) {
@@ -60,12 +63,12 @@ export default function AdminSettingsPage() {
   const handleSaveAll = async () => {
     setSaving(true);
     setMessage(null);
-    
+
     try {
       // Save all three API keys
       const promises = Object.entries(apiKeys).map(([key, value]) => {
         if (!value) return Promise.resolve(); // Skip empty values
-        
+
         return fetch('/api/admin/settings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -155,6 +158,26 @@ export default function AdminSettingsPage() {
           />
         </div>
 
+        {/* Gemini API Key */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="gemini" className="text-base font-semibold text-gray-900">
+              Gemini API Key
+            </Label>
+            {apiKeys.GEMINI_API_KEY && (
+              <span className="text-xs text-green-600 font-medium">✓ Saved</span>
+            )}
+          </div>
+          <Input
+            id="gemini"
+            type="password"
+            value={apiKeys.GEMINI_API_KEY}
+            onChange={(e) => setApiKeys({ ...apiKeys, GEMINI_API_KEY: e.target.value })}
+            placeholder="Enter your Gemini API key"
+            className="font-mono"
+          />
+        </div>
+
         {/* PhotoRoom API Key */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">
@@ -176,8 +199,8 @@ export default function AdminSettingsPage() {
         </div>
 
         {/* Save Button */}
-        <Button 
-          onClick={handleSaveAll} 
+        <Button
+          onClick={handleSaveAll}
           disabled={saving}
           className="w-full bg-blue-600 hover:bg-blue-700 text-white"
           size="lg"
