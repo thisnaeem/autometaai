@@ -81,31 +81,45 @@ export async function POST(request: NextRequest) {
       // If approved, add credits to user and create credit transaction
       if (action === 'APPROVED') {
         // Determine which credit field to update based on creditType
-        const creditField = paymentRequest.creditType === 'BG_REMOVAL' 
-          ? 'bgRemovalCredits' 
+        const creditField = paymentRequest.creditType === 'BG_REMOVAL'
+          ? 'bgRemovalCredits'
           : 'credits';
+
+        // Calculate expiration date for BG removal credits (30 days from now)
+        const updateData: any = {
+          [creditField]: {
+            increment: paymentRequest.creditsRequested
+          }
+        };
+
+        // Set expiration date only for BG removal credits
+        if (paymentRequest.creditType === 'BG_REMOVAL') {
+          const expirationDate = new Date();
+          expirationDate.setDate(expirationDate.getDate() + 30);
+          updateData.bgCreditsExpiresAt = expirationDate;
+        }
 
         // Update user credits
         await tx.user.update({
           where: { id: paymentRequest.userId },
-          data: {
-            [creditField]: {
-              increment: paymentRequest.creditsRequested
-            }
-          }
+          data: updateData
         });
 
         // Create credit transaction record
-        const creditTypeLabel = paymentRequest.creditType === 'BG_REMOVAL' 
-          ? 'BG Removal Credits' 
+        const creditTypeLabel = paymentRequest.creditType === 'BG_REMOVAL'
+          ? 'BG Removal Credits'
           : 'General Credits';
+
+        const expirationNote = paymentRequest.creditType === 'BG_REMOVAL'
+          ? ` (expires in 30 days)`
+          : '';
 
         await tx.creditTransaction.create({
           data: {
             userId: paymentRequest.userId,
             amount: paymentRequest.creditsRequested,
             type: 'PURCHASE',
-            description: `${creditTypeLabel} purchased via ${paymentRequest.paymentMethod} - Payment Request #${requestId.slice(-8)}`
+            description: `${creditTypeLabel} purchased via ${paymentRequest.paymentMethod} - Payment Request #${requestId.slice(-8)}${expirationNote}`
           }
         });
       }

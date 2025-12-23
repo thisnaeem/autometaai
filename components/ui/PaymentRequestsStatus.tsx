@@ -114,7 +114,7 @@ export default function PaymentRequestsStatus({ className = '' }: PaymentRequest
             You haven&apos;t made any payment requests yet. Purchase credits to get started!
           </p>
           <button
-            onClick={() => window.location.href = '/app/buy-credits'}
+            onClick={() => window.location.href = '/buy-credits'}
             className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white px-8 py-3 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all duration-300"
           >
             Buy Credits

@@ -11,7 +11,7 @@ export default function Footer() {
       { label: 'Features', href: '#features' },
       { label: 'Pricing', href: '#pricing' },
       { label: 'Dashboard', href: '/app' },
-      { label: 'Describe', href: '/app/describe' }
+      { label: 'Describe', href: '/describe' }
     ],
     resources: [
       { label: 'Documentation', href: '#' },
@@ -123,6 +123,12 @@ export default function Footer() {
               © {new Date().getFullYear()} csvout. All rights reserved.
             </p>
             <div className="flex gap-6 text-sm">
+              <Link href="/signin" className="text-slate-400 hover:text-white transition-colors">
+                Sign In
+              </Link>
+              <Link href="/signup" className="text-slate-400 hover:text-white transition-colors">
+                Sign Up
+              </Link>
               <a href="#" className="text-slate-400 hover:text-white transition-colors">
                 Privacy
               </a>

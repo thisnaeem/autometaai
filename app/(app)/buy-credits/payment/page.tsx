@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import { useSession } from '@/lib/auth-client';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { redirect, useRouter, useSearchParams } from 'next/navigation';
 
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -15,7 +15,7 @@ function PaymentPageContent() {
   const { data: session, isPending } = useSession();
   const router = useRouter();
   const searchParams = useSearchParams();
-  
+
   const [credits, setCredits] = useState('');
   const [amount, setAmount] = useState('');
   const [qrCode, setQrCode] = useState('');
@@ -32,7 +32,7 @@ function PaymentPageContent() {
   useEffect(() => {
     if (isPending) return;
     if (!session) {
-      router.push('/auth/signin');
+      redirect('/signin');
       return;
     }
 
@@ -45,7 +45,7 @@ function PaymentPageContent() {
     const creditTypeParam = searchParams.get('creditType') as 'GENERAL' | 'BG_REMOVAL';
 
     if (!creditsParam || !amountParam) {
-      router.push('/app/buy-credits');
+      router.push('/buy-credits');
       return;
     }
 
@@ -117,10 +117,10 @@ function PaymentPageContent() {
       }
 
       setSuccess('Payment request submitted successfully! Our team will review it within 24 hours.');
-      
+
       // Redirect to history page after 3 seconds
       setTimeout(() => {
-        router.push('/app/history');
+        router.push('/history');
       }, 3000);
 
     } catch (error) {
@@ -226,7 +226,7 @@ function PaymentPageContent() {
         <div>
           <Card className="p-6">
             <h2 className="text-xl font-semibold text-gray-900 mb-4">Payment Verification</h2>
-            
+
             <div className="mb-6">
               <Label htmlFor="transactionId" className="block text-sm font-medium text-gray-700 mb-2">
                 Transaction ID *
@@ -300,7 +300,7 @@ function PaymentPageContent() {
             <div className="mt-4 text-center">
               <Button
                 variant="outline"
-                onClick={() => router.push('/app/buy-credits')}
+                onClick={() => router.push('/buy-credits')}
                 disabled={loading}
               >
                 Back to Packages

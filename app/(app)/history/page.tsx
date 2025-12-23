@@ -368,7 +368,7 @@ const HistoryPage = () => {
                 <Button
                   variant="primary"
                   size="lg"
-                  onClick={() => window.location.href = '/app/describe'}
+                  onClick={() => window.location.href = '/describe'}
                   className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700"
                 >
                   <HugeiconsIcon icon={Image02Icon} size={20} className="mr-2" />

@@ -20,6 +20,7 @@ model User {
   role             UserRole  @default(USER)
   credits          Int       @default(0)
   bgRemovalCredits Int       @default(0)
+  bgCreditsExpiresAt DateTime? // Tracks when BG removal credits expire (30 days from purchase)
   aiProvider       String    @default("openai") // "openai" or "gemini"
   isActive         Boolean   @default(true)
   lastLoginAt      DateTime?

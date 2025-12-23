@@ -40,6 +40,10 @@ export const auth = betterAuth({
         defaultValue: 0,
         required: false,
       },
+      bgCreditsExpiresAt: {
+        type: "date",
+        required: false,
+      },
       isActive: {
         type: "boolean",
         defaultValue: true,

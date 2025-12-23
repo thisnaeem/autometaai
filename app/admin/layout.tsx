@@ -17,12 +17,12 @@ export default function AdminLayout({
     if (isPending) return // Still loading
 
     if (!session) {
-      router.push("/auth/signin")
+      router.push("/signin")
       return
     }
 
     if ((session.user as any).role !== "ADMIN") {
-      router.push("/app/describe")
+      router.push("/describe")
       return
     }
   }, [session, isPending, router])
@@ -43,7 +43,7 @@ export default function AdminLayout({
     <div className="flex h-screen bg-gray-50">
       {/* Admin Sidebar */}
       <AdminSidebar />
-      
+
       {/* Main Content */}
       <div className="flex-1 overflow-auto">
         {children}

@@ -125,7 +125,7 @@ export default function Pricing() {
                   </div>
                 </div>
 
-                <Link href="/app/describe">
+                <Link href="/describe">
                   <Button
                     variant={plan.popular ? 'primary' : 'outline'}
                     size="lg"

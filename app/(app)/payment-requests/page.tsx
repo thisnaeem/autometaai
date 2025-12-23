@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { useSession } from '@/lib/auth-client';
-import { useRouter } from 'next/navigation';
+import { redirect, useRouter } from 'next/navigation';
 import PaymentRequestsStatus from '@/components/ui/PaymentRequestsStatus';
 
 export default function PaymentRequestsPage() {
@@ -12,8 +12,7 @@ export default function PaymentRequestsPage() {
   useEffect(() => {
     if (isPending) return;
     if (!session) {
-      router.push('/auth/signin');
-      return;
+      redirect('/signin');
     }
   }, [session, isPending, router]);
 

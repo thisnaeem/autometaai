@@ -57,7 +57,7 @@ export default function CTA() {
           </p>
 
           <div className="flex justify-center">
-            <Link href="/app/describe">
+            <Link href="/describe">
               <Button
                 variant="primary"
                 size="lg"

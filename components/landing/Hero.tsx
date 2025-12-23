@@ -82,26 +82,23 @@ export default function Hero() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.6 }}
-            className="flex flex-col sm:flex-row gap-4 justify-center items-center"
+            className="flex flex-col sm:flex-row gap-6 justify-center items-center"
           >
-            <Link href="/app/describe">
+            <Link href="/signup" className="w-full sm:w-auto">
               <Button
-                variant="primary"
-                size="lg"
-                className="w-full sm:w-auto bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white px-8 py-4 text-lg font-semibold rounded-xl shadow-xl hover:shadow-2xl transition-all duration-300"
+                className="w-full h-16 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-10 text-lg font-bold rounded-2xl shadow-2xl shadow-blue-500/30 transition-all hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-3"
               >
-                <HugeiconsIcon icon={FlashIcon} size={24} className="mr-2" />
-                Start Creating
+                <HugeiconsIcon icon={FlashIcon} size={24} />
+                Start Creating Now
               </Button>
             </Link>
-            <Link href="#features">
+            <Link href="#features" className="w-full sm:w-auto">
               <Button
                 variant="outline"
-                size="lg"
-                className="w-full sm:w-auto border-2 border-slate-300 text-slate-700 hover:bg-slate-50 px-8 py-4 text-lg font-semibold rounded-xl"
+                className="w-full h-16 border-2 border-slate-200 bg-white/50 backdrop-blur-sm text-slate-700 hover:bg-white px-10 text-lg font-bold rounded-2xl transition-all hover:border-blue-500/30 active:scale-[0.98] flex items-center justify-center gap-3"
               >
-                <HugeiconsIcon icon={Image02Icon} size={24} className="mr-2" />
-                Explore Features
+                <HugeiconsIcon icon={Image02Icon} size={24} />
+                See How It Works
               </Button>
             </Link>
           </motion.div>

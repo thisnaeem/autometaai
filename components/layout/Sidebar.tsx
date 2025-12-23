@@ -16,42 +16,42 @@ const Sidebar = () => {
   const navigation = [
     {
       name: 'Describe',
-      href: '/app/describe',
+      href: '/describe',
       icon: <HugeiconsIcon icon={TextIcon} size={20} strokeWidth={2} />
     },
     {
       name: 'BG Remover',
-      href: '/app/bg-remover',
+      href: '/bg-remover',
       icon: <HugeiconsIcon icon={Image02Icon} size={20} strokeWidth={2} />
     },
     {
       name: 'Runway Prompt',
-      href: '/app/runway-prompt',
+      href: '/runway-prompt',
       icon: <HugeiconsIcon icon={VideoIcon} size={20} strokeWidth={2} />
     },
     {
       name: 'Metadata Gen',
-      href: '/app/metadata-gen',
+      href: '/metadata-gen',
       icon: <HugeiconsIcon icon={FileEditIcon} size={20} strokeWidth={2} />
     },
     {
       name: 'History',
-      href: '/app/history',
+      href: '/history',
       icon: <HugeiconsIcon icon={Clock01Icon} size={20} strokeWidth={2} />
     },
     {
       name: 'Buy Credits',
-      href: '/app/buy-credits',
+      href: '/buy-credits',
       icon: <HugeiconsIcon icon={ShoppingBasket01Icon} size={20} strokeWidth={2} />
     },
     {
       name: 'Payment Requests',
-      href: '/app/payment-requests',
+      href: '/payment-requests',
       icon: <HugeiconsIcon icon={Invoice01Icon} size={20} strokeWidth={2} />
     },
     {
       name: 'Settings',
-      href: '/app/settings',
+      href: '/settings',
       icon: <HugeiconsIcon icon={Settings02Icon} size={20} strokeWidth={2} />
     }
   ];
@@ -106,7 +106,7 @@ const Sidebar = () => {
               {session?.user?.name || 'User'}
             </p>
             <p className="text-xs text-slate-500 truncate">
-              {session?.user?.email || 'user@example.com'}
+              {session?.user?.email || ''}
             </p>
             {/* Credits Display - Side by Side */}
             <div className="mt-2 flex items-center gap-3">
@@ -121,11 +121,18 @@ const Sidebar = () => {
               )}
               {/* BG Removal Credits */}
               {(session?.user as any)?.bgRemovalCredits !== undefined && (
-                <div className="flex items-center gap-1 px-2 py-1 bg-purple-50 rounded-lg border border-purple-200">
-                  <HugeiconsIcon icon={PaintBoardIcon} size={14} className="text-purple-600" />
-                  <p className="text-xs text-purple-700 font-bold">
-                    {(session?.user as any).bgRemovalCredits}
-                  </p>
+                <div className="flex flex-col gap-0.5">
+                  <div className="flex items-center gap-1 px-2 py-1 bg-purple-50 rounded-lg border border-purple-200">
+                    <HugeiconsIcon icon={PaintBoardIcon} size={14} className="text-purple-600" />
+                    <p className="text-xs text-purple-700 font-bold">
+                      {(session?.user as any).bgRemovalCredits}
+                    </p>
+                  </div>
+                  {(session?.user as any)?.bgCreditsExpiresAt && (
+                    <p className="text-[10px] text-slate-500 px-1">
+                      Exp: {new Date((session?.user as any).bgCreditsExpiresAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -136,7 +143,7 @@ const Sidebar = () => {
         <Button
           variant="outline"
           size="sm"
-          onClick={() => signOut({ fetchOptions: { onSuccess: () => { window.location.href = '/auth/signin' } } })}
+          onClick={() => signOut({ fetchOptions: { onSuccess: () => { window.location.href = '/signin' } } })}
           className="w-full flex items-center justify-center py-2.5 bg-red-50 border-red-200 text-red-700 hover:bg-red-100 hover:border-red-300 transition-all duration-200 rounded-xl font-medium"
         >
           <HugeiconsIcon icon={Logout01Icon} size={16} strokeWidth={2} className="mr-2" />

@@ -7,13 +7,13 @@ import { useSession, signOut } from '@/lib/auth-client';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/Button';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { 
-  DashboardSquare01Icon, 
-  UserGroupIcon, 
-  CreditCardIcon, 
+import {
+  DashboardSquare01Icon,
+  UserGroupIcon,
+  CreditCardIcon,
   Analytics01Icon,
   Settings02Icon,
-  Logout01Icon 
+  Logout01Icon
 } from '@hugeicons/core-free-icons';
 
 const AdminSidebar = () => {
@@ -108,13 +108,13 @@ const AdminSidebar = () => {
             </div>
           </div>
         </div>
-        
+
         {/* Logout Button */}
         <Button
           variant="outline"
           size="sm"
-          onClick={() => signOut({ fetchOptions: { onSuccess: () => { window.location.href = '/auth/signin' } } })}
-          className="w-full flex items-center justify-center py-2.5 bg-red-50 border-red-200 text-red-700 hover:bg-red-100 hover:border-red-300 transition-all duration-200 rounded-xl font-medium"
+          className="w-full mt-4 border-slate-200 text-slate-600 hover:text-red-600 hover:border-red-100 font-bold transition-all flex items-center gap-2 group"
+          onClick={() => signOut({ fetchOptions: { onSuccess: () => { window.location.href = '/signin' } } })}
         >
           <HugeiconsIcon icon={Logout01Icon} size={16} strokeWidth={2} className="mr-2" />
           Sign Out

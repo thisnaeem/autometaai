@@ -36,6 +36,7 @@ export interface BgCreditTransactionResult {
   success: boolean;
   newBalance: number;
   transactionId: string;
+  expiresAt?: Date | null;
   error?: string;
 }
 
@@ -55,8 +56,10 @@ export interface BgCreditValidationResult {
 export class BgCreditManager {
   private userId: string;
   private currentBalance: number | null = null;
+  private expiresAt: Date | null | undefined = undefined;
   private lastUpdated: Date | null = null;
   private readonly CACHE_DURATION_MS = 5000;
+  private readonly EXPIRATION_DAYS = 30;
 
   constructor(userId: string) {
     this.userId = userId;
@@ -67,7 +70,7 @@ export class BgCreditManager {
    */
   async getCurrentBalance(forceRefresh: boolean = false): Promise<number> {
     const now = new Date();
-    
+
     if (
       !forceRefresh &&
       this.currentBalance !== null &&
@@ -78,9 +81,12 @@ export class BgCreditManager {
     }
 
     try {
+      // First check and expire old credits
+      await this.checkAndExpireCredits();
+
       const user = await prisma.user.findUnique({
         where: { id: this.userId },
-        select: { bgRemovalCredits: true }
+        select: { bgRemovalCredits: true, bgCreditsExpiresAt: true }
       });
 
       if (!user) {
@@ -88,8 +94,9 @@ export class BgCreditManager {
       }
 
       this.currentBalance = user.bgRemovalCredits;
+      this.expiresAt = user.bgCreditsExpiresAt;
       this.lastUpdated = now;
-      
+
       return this.currentBalance;
     } catch (error) {
       if (error instanceof UserNotFoundError) {
@@ -100,12 +107,79 @@ export class BgCreditManager {
   }
 
   /**
+   * Check and expire credits if they have passed expiration date
+   */
+  private async checkAndExpireCredits(): Promise<void> {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: this.userId },
+        select: { bgRemovalCredits: true, bgCreditsExpiresAt: true }
+      });
+
+      if (!user) {
+        return;
+      }
+
+      // If user has credits and an expiration date that has passed
+      if (user.bgRemovalCredits > 0 && user.bgCreditsExpiresAt) {
+        const now = new Date();
+        if (user.bgCreditsExpiresAt < now) {
+          // Credits have expired, set to 0
+          await prisma.$transaction(async (tx) => {
+            await tx.user.update({
+              where: { id: this.userId },
+              data: {
+                bgRemovalCredits: 0,
+                bgCreditsExpiresAt: null
+              }
+            });
+
+            // Create transaction record for expired credits
+            await tx.creditTransaction.create({
+              data: {
+                userId: this.userId,
+                amount: -user.bgRemovalCredits,
+                type: CreditTransactionType.BG_REMOVAL,
+                description: `${user.bgRemovalCredits} BG removal credits expired on ${user.bgCreditsExpiresAt?.toDateString() || 'unknown date'}`
+              }
+            });
+          });
+
+          // Clear cache
+          this.currentBalance = 0;
+          this.expiresAt = null;
+        }
+      }
+    } catch (error) {
+      console.error('Error checking credit expiration:', error);
+      // Don't throw - we don't want to block operations if expiration check fails
+    }
+  }
+
+  /**
+   * Get expiration date for BG removal credits
+   */
+  async getExpirationDate(): Promise<Date | null> {
+    if (this.expiresAt !== undefined) {
+      return this.expiresAt;
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: this.userId },
+      select: { bgCreditsExpiresAt: true }
+    });
+
+    this.expiresAt = user?.bgCreditsExpiresAt || null;
+    return this.expiresAt;
+  }
+
+  /**
    * Validate if user has sufficient BG removal credits
    */
   async validateCredits(requiredCredits: number): Promise<BgCreditValidationResult> {
     const available = await this.getCurrentBalance();
     const isValid = available >= requiredCredits;
-    
+
     return {
       isValid,
       available,
@@ -186,7 +260,7 @@ export class BgCreditManager {
       if (error instanceof InsufficientBgCreditsError || error instanceof UserNotFoundError) {
         throw error;
       }
-      
+
       return {
         success: false,
         newBalance: this.currentBalance || 0,
@@ -209,19 +283,27 @@ export class BgCreditManager {
     }
 
     try {
+      // Calculate expiration date (30 days from now)
+      const expirationDate = new Date();
+      expirationDate.setDate(expirationDate.getDate() + this.EXPIRATION_DAYS);
+
       const result = await prisma.$transaction(async (tx) => {
         const user = await tx.user.findUnique({
           where: { id: this.userId },
-          select: { bgRemovalCredits: true }
+          select: { bgRemovalCredits: true, bgCreditsExpiresAt: true }
         });
 
         if (!user) {
           throw new UserNotFoundError(this.userId);
         }
 
+        // Update credits and set/update expiration date
         const updatedUser = await tx.user.update({
           where: { id: this.userId },
-          data: { bgRemovalCredits: user.bgRemovalCredits + amount }
+          data: {
+            bgRemovalCredits: user.bgRemovalCredits + amount,
+            bgCreditsExpiresAt: expirationDate // Always update expiration on credit purchase
+          }
         });
 
         const transaction = await tx.creditTransaction.create({
@@ -229,30 +311,33 @@ export class BgCreditManager {
             userId: this.userId,
             amount: amount,
             type: transactionType,
-            description: description || `Added ${amount} BG removal credit(s)`
+            description: description || `Added ${amount} BG removal credit(s) (expires ${expirationDate.toDateString()})`
           }
         });
 
         return {
           newBalance: updatedUser.bgRemovalCredits,
-          transactionId: transaction.id
+          transactionId: transaction.id,
+          expiresAt: updatedUser.bgCreditsExpiresAt
         };
       });
 
       this.currentBalance = result.newBalance;
+      this.expiresAt = result.expiresAt;
       this.lastUpdated = new Date();
 
       return {
         success: true,
         newBalance: result.newBalance,
-        transactionId: result.transactionId
+        transactionId: result.transactionId,
+        expiresAt: result.expiresAt
       };
 
     } catch (error) {
       if (error instanceof UserNotFoundError) {
         throw error;
       }
-      
+
       return {
         success: false,
         newBalance: this.currentBalance || 0,
@@ -267,6 +352,7 @@ export class BgCreditManager {
    */
   clearCache(): void {
     this.currentBalance = null;
+    this.expiresAt = undefined;
     this.lastUpdated = null;
   }
 

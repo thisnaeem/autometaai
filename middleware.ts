@@ -5,13 +5,13 @@ export async function middleware(req: NextRequest) {
   // Simple cookie-based auth check
   // Better Auth uses '__Secure-better-auth.session_token' in production (HTTPS)
   // and 'better-auth.session_token' in development (HTTP)
-  const sessionToken = req.cookies.get('__Secure-better-auth.session_token') || 
-                       req.cookies.get('better-auth.session_token')
+  const sessionToken = req.cookies.get('__Secure-better-auth.session_token') ||
+    req.cookies.get('better-auth.session_token')
   const isAuth = !!sessionToken
 
-  const isAuthPage = req.nextUrl.pathname.startsWith("/auth")
+  const isAuthPage = req.nextUrl.pathname.startsWith("/signin") || req.nextUrl.pathname.startsWith("/signup")
   const isAdminPage = req.nextUrl.pathname.startsWith("/admin")
-  const isAppPage = req.nextUrl.pathname.startsWith("/app")
+  const isAppPage = /^\/(describe|bg-remover|runway-prompt|metadata-gen|history|buy-credits|payment-requests|settings)/.test(req.nextUrl.pathname)
   const isPublicPage = req.nextUrl.pathname === "/" || req.nextUrl.pathname.startsWith("/api")
 
   // Allow public pages and API routes
@@ -21,12 +21,12 @@ export async function middleware(req: NextRequest) {
 
   // Redirect authenticated users away from auth pages
   if (isAuthPage && isAuth) {
-    return NextResponse.redirect(new URL("/app/describe", req.url))
+    return NextResponse.redirect(new URL("/describe", req.url))
   }
 
-  // Redirect unauthenticated users to sign in
+  // Redirect unauthenticated users to home page
   if (!isAuth && (isAppPage || isAdminPage)) {
-    return NextResponse.redirect(new URL("/auth/signin", req.url))
+    return NextResponse.redirect(new URL("/", req.url))
   }
 
   // Note: Admin role checking is done in the layout component
@@ -37,8 +37,10 @@ export async function middleware(req: NextRequest) {
 
 export const config = {
   matcher: [
-    "/app/:path*",
+    "/:app(describe|bg-remover|runway-prompt|metadata-gen|history|buy-credits|payment-requests|settings)",
+    "/:app(describe|bg-remover|runway-prompt|metadata-gen|history|buy-credits|payment-requests|settings)/:path*",
     "/admin/:path*",
-    "/auth/:path*"
+    "/signin",
+    "/signup"
   ]
 }
