@@ -104,31 +104,32 @@ const Sidebar = () => {
               {session?.user?.email || ''}
             </p>
             {/* Credits Display - Side by Side */}
-            <div className="mt-2 flex items-center gap-3">
-              {/* General Credits */}
-              {(session?.user as any)?.credits !== undefined && (
-                <div className="flex items-center gap-1 px-2 py-1 bg-blue-50 rounded-lg border border-blue-200">
-                  <HugeiconsIcon icon={FlashIcon} size={14} className="text-blue-600" />
-                  <p className="text-xs text-blue-700 font-bold">
-                    {(session?.user as any).credits}
-                  </p>
-                </div>
-              )}
-              {/* BG Removal Credits */}
-              {(session?.user as any)?.bgRemovalCredits !== undefined && (
-                <div className="flex flex-col gap-0.5">
+            <div className="mt-2 flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                {/* General Credits */}
+                {(session?.user as any)?.credits !== undefined && (
+                  <div className="flex items-center gap-1 px-2 py-1 bg-blue-50 rounded-lg border border-blue-200">
+                    <HugeiconsIcon icon={FlashIcon} size={14} className="text-blue-600" />
+                    <p className="text-xs text-blue-700 font-bold">
+                      {(session?.user as any).credits}
+                    </p>
+                  </div>
+                )}
+                {/* BG Removal Credits */}
+                {(session?.user as any)?.bgRemovalCredits !== undefined && (
                   <div className="flex items-center gap-1 px-2 py-1 bg-purple-50 rounded-lg border border-purple-200">
                     <HugeiconsIcon icon={PaintBoardIcon} size={14} className="text-purple-600" />
                     <p className="text-xs text-purple-700 font-bold">
                       {(session?.user as any).bgRemovalCredits}
                     </p>
                   </div>
-                  {(session?.user as any)?.bgCreditsExpiresAt && (
-                    <p className="text-[10px] text-slate-500 px-1">
-                      Exp: {new Date((session?.user as any).bgCreditsExpiresAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                    </p>
-                  )}
-                </div>
+                )}
+              </div>
+              {/* Expiration shown separately below */}
+              {(session?.user as any)?.bgCreditsExpiresAt && (
+                <p className="text-[10px] text-slate-500">
+                  BG Exp: {new Date((session?.user as any).bgCreditsExpiresAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                </p>
               )}
             </div>
           </div>

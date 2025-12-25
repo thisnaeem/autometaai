@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Check, CreditCard, Shield, Zap, Info } from 'lucide-react';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { ArrowRight01Icon, PackageIcon, FlashIcon, CrownIcon } from '@hugeicons/core-free-icons';
+import { ArrowRight01Icon, PackageIcon, FlashIcon, CrownIcon, PaintBoardIcon } from '@hugeicons/core-free-icons';
 import { cn } from '@/lib/utils';
 
 type LocationType = 'pakistan' | 'international';
@@ -32,6 +32,8 @@ const pakistanGeneralPackages: CreditPackage[] = [
     credits: 3000,
     price: 300,
     qrCode: 'Custom 2pkr for 1 cradit.png',
+    icon: FlashIcon,
+    gradient: 'from-blue-500 to-cyan-500',
     features: [
       '3000 AI generations',
       'All tools access',
@@ -45,6 +47,8 @@ const pakistanGeneralPackages: CreditPackage[] = [
     price: 1000,
     popular: true,
     qrCode: '1000 Rs 500 Cradit.png',
+    icon: FlashIcon,
+    gradient: 'from-blue-600 to-indigo-600',
     features: [
       '10000 AI generations',
       'All tools access',
@@ -59,6 +63,8 @@ const pakistanGeneralPackages: CreditPackage[] = [
     credits: 20000,
     price: 2000,
     qrCode: '2000Rs 1000 Cradit.png',
+    icon: FlashIcon,
+    gradient: 'from-blue-700 to-purple-600',
     features: [
       '20000 AI generations',
       'All tools access',
@@ -79,6 +85,8 @@ const internationalGeneralPackages: CreditPackage[] = [
     price: 5,
     currency: 'USD',
     qrCode: 'Binance 10$ equal to 1000 cradit.png', // Fallback
+    icon: FlashIcon,
+    gradient: 'from-blue-500 to-cyan-500',
     features: [
       '100 AI generations',
       'All tools access',
@@ -93,6 +101,8 @@ const internationalGeneralPackages: CreditPackage[] = [
     currency: 'USD',
     popular: true,
     qrCode: 'Binance 10$ equal to 1000 cradit.png',
+    icon: FlashIcon,
+    gradient: 'from-blue-600 to-indigo-600',
     features: [
       '500 AI generations',
       'All tools access',
@@ -108,6 +118,8 @@ const internationalGeneralPackages: CreditPackage[] = [
     price: 20,
     currency: 'USD',
     qrCode: 'Binance 20$ equal to 2000 credit.png',
+    icon: FlashIcon,
+    gradient: 'from-blue-700 to-purple-600',
     features: [
       '1000 AI generations',
       'All tools access',
@@ -125,6 +137,8 @@ const pakistanBgRemovalPackages: CreditPackage[] = [
     credits: 100,
     price: 200,
     qrCode: 'Custom 2pkr for 1 cradit.png',
+    icon: PaintBoardIcon,
+    gradient: 'from-purple-500 to-pink-500',
     features: [
       '100 BG removals',
       'Single & bulk processing',
@@ -139,6 +153,8 @@ const pakistanBgRemovalPackages: CreditPackage[] = [
     price: 1000,
     popular: true,
     qrCode: '1000 Rs 500 Cradit.png',
+    icon: PaintBoardIcon,
+    gradient: 'from-purple-600 to-fuchsia-600',
     features: [
       '500 BG removals',
       'Single & bulk processing',
@@ -153,6 +169,8 @@ const pakistanBgRemovalPackages: CreditPackage[] = [
     credits: 1000,
     price: 2000,
     qrCode: '2000Rs 1000 Cradit.png',
+    icon: PaintBoardIcon,
+    gradient: 'from-purple-700 to-violet-600',
     features: [
       '1000 BG removals',
       'Single & bulk processing',
@@ -172,7 +190,7 @@ const internationalBgRemovalPackages: CreditPackage[] = [
     price: 5,
     qrCode: 'Binance 10$ equal to 1000 cradit.png',
     currency: 'USD',
-    icon: FlashIcon,
+    icon: PaintBoardIcon,
     gradient: 'from-purple-500 to-pink-500',
     features: [
       '500 BG removals',
@@ -189,8 +207,8 @@ const internationalBgRemovalPackages: CreditPackage[] = [
     qrCode: 'Binance 10$ equal to 1000 cradit.png',
     popular: true,
     currency: 'USD',
-    icon: CrownIcon,
-    gradient: 'from-purple-500 to-indigo-500',
+    icon: PaintBoardIcon,
+    gradient: 'from-purple-600 to-fuchsia-600',
     features: [
       '1000 BG removals',
       'Single & bulk processing',

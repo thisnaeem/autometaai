@@ -59,7 +59,7 @@ const HistoryPage = () => {
     hasPrev: false,
   });
 
-  const [activeTab, setActiveTab] = useState<'all' | 'describe' | 'runway' | 'metadata'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'describe' | 'runway'>('all');
 
   const fetchHistory = async (page: number = 1, search: string = '', tab: string = 'all') => {
     try {
@@ -70,10 +70,10 @@ const HistoryPage = () => {
         type: tab,
         ...(search && { search }),
       });
-      
+
       const response = await fetch(`/api/history?${params}`);
       if (!response.ok) throw new Error('Failed to fetch history');
-      
+
       const data: HistoryResponse = await response.json();
       setHistoryItems(data.descriptions);
       setPagination(data.pagination);
@@ -111,7 +111,7 @@ const HistoryPage = () => {
   const handleDownloadSingle = (item: HistoryItem) => {
     let content = '';
     let filename = item.filename.replace(/\.[^/.]+$/, ''); // Remove extension
-    
+
     if (item.type === 'describe') {
       content = `Filename: ${item.filename}\n`;
       content += `Description: ${item.description || 'N/A'}\n`;
@@ -135,7 +135,7 @@ const HistoryPage = () => {
       content += `Timestamp: ${new Date(item.createdAt).toLocaleString()}\n`;
       filename += '_metadata.txt';
     }
-    
+
     // Create and download file
     const blob = new Blob([content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
@@ -150,18 +150,18 @@ const HistoryPage = () => {
 
   const handleDownloadAll = () => {
     if (historyItems.length === 0) return;
-    
+
     let content = `History Export - ${new Date().toLocaleString()}\n`;
     content += `Total Items: ${historyItems.length}\n`;
     content += `Filter: ${activeTab}\n`;
     content += '='.repeat(80) + '\n\n';
-    
+
     historyItems.forEach((item, index) => {
       content += `[${index + 1}] ${item.filename}\n`;
       content += `Type: ${item.type.toUpperCase()}\n`;
       content += `Date: ${new Date(item.createdAt).toLocaleString()}\n`;
       content += '-'.repeat(80) + '\n';
-      
+
       if (item.type === 'describe') {
         content += `Description: ${item.description || 'N/A'}\n`;
         content += `Confidence: ${item.confidence || 0}%\n`;
@@ -175,10 +175,10 @@ const HistoryPage = () => {
         content += `Category: ${item.category || 'N/A'}\n`;
         content += `Keywords: ${item.keywords || 'N/A'}\n`;
       }
-      
+
       content += '\n' + '='.repeat(80) + '\n\n';
     });
-    
+
     // Create and download file
     const blob = new Blob([content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
@@ -203,7 +203,7 @@ const HistoryPage = () => {
       }
 
       const result = await response.json();
-      
+
       setHistoryItems([]);
       setPagination({
         currentPage: 1,
@@ -214,9 +214,9 @@ const HistoryPage = () => {
       });
       setCurrentPage(1);
       setSearchTerm('');
-      
+
       alert(`Successfully cleared ${result.deletedCount} items from history.`);
-      
+
     } catch (error) {
       console.error('Error clearing history:', error);
       alert('Failed to clear history. Please try again.');
@@ -266,18 +266,18 @@ const HistoryPage = () => {
               <p className="text-slate-600 text-lg">View and manage your previous image descriptions</p>
             </div>
             <div className="mt-4 sm:mt-0 flex gap-3">
-              <Button 
-                variant="outline" 
-                onClick={handleDownloadAll} 
+              <Button
+                variant="outline"
+                onClick={handleDownloadAll}
                 disabled={historyItems.length === 0}
                 className="border-slate-300 text-slate-700 hover:bg-slate-50"
               >
                 <HugeiconsIcon icon={Download01Icon} size={18} className="mr-2" />
                 Download All
               </Button>
-              <Button 
-                variant="outline" 
-                onClick={() => setShowClearConfirm(true)} 
+              <Button
+                variant="outline"
+                onClick={() => setShowClearConfirm(true)}
                 disabled={historyItems.length === 0}
                 className="border-red-200 text-red-600 hover:bg-red-50"
               >
@@ -293,43 +293,30 @@ const HistoryPage = () => {
           <div className="flex gap-2">
             <button
               onClick={() => setActiveTab('all')}
-              className={`flex-1 py-3 px-6 rounded-xl font-semibold transition-all ${
-                activeTab === 'all'
+              className={`flex-1 py-3 px-6 rounded-xl font-semibold transition-all ${activeTab === 'all'
                   ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-lg'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-              }`}
+                }`}
             >
               All Tools
             </button>
             <button
               onClick={() => setActiveTab('describe')}
-              className={`flex-1 py-3 px-6 rounded-xl font-semibold transition-all ${
-                activeTab === 'describe'
+              className={`flex-1 py-3 px-6 rounded-xl font-semibold transition-all ${activeTab === 'describe'
                   ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-lg'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-              }`}
+                }`}
             >
               Describe
             </button>
             <button
               onClick={() => setActiveTab('runway')}
-              className={`flex-1 py-3 px-6 rounded-xl font-semibold transition-all ${
-                activeTab === 'runway'
+              className={`flex-1 py-3 px-6 rounded-xl font-semibold transition-all ${activeTab === 'runway'
                   ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-lg'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-              }`}
+                }`}
             >
               Runway Prompt
-            </button>
-            <button
-              onClick={() => setActiveTab('metadata')}
-              className={`flex-1 py-3 px-6 rounded-xl font-semibold transition-all ${
-                activeTab === 'metadata'
-                  ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-lg'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-              }`}
-            >
-              Metadata Gen
             </button>
           </div>
         </div>
@@ -341,7 +328,7 @@ const HistoryPage = () => {
               {pagination.totalCount} {pagination.totalCount === 1 ? 'Result' : 'Results'}
             </h2>
           </div>
-          
+
           {loading ? (
             <div className="p-8">
               <div className="animate-pulse space-y-4">
@@ -382,34 +369,32 @@ const HistoryPage = () => {
                 <div key={item.id} className="p-6 hover:bg-slate-50 transition-colors">
                   <div className="flex items-start justify-between">
                     <div className="flex items-start space-x-4 flex-1">
-                      <div className={`w-16 h-16 rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm ${
-                        item.type === 'describe' ? 'bg-gradient-to-br from-blue-100 to-cyan-100' :
-                        item.type === 'runway' ? 'bg-gradient-to-br from-purple-100 to-pink-100' :
-                        'bg-gradient-to-br from-green-100 to-emerald-100'
-                      }`}>
+                      <div className={`w-16 h-16 rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm ${item.type === 'describe' ? 'bg-gradient-to-br from-blue-100 to-cyan-100' :
+                          item.type === 'runway' ? 'bg-gradient-to-br from-purple-100 to-pink-100' :
+                            'bg-gradient-to-br from-green-100 to-emerald-100'
+                        }`}>
                         <HugeiconsIcon icon={Image02Icon} size={32} className={
                           item.type === 'describe' ? 'text-blue-600' :
-                          item.type === 'runway' ? 'text-purple-600' :
-                          'text-green-600'
+                            item.type === 'runway' ? 'text-purple-600' :
+                              'text-green-600'
                         } />
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center space-x-2 mb-2">
                           <h3 className="text-lg font-semibold text-slate-900 truncate">{item.filename}</h3>
-                          <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-                            item.type === 'describe' ? 'bg-gradient-to-r from-blue-100 to-cyan-100 text-blue-700' :
-                            item.type === 'runway' ? 'bg-gradient-to-r from-purple-100 to-pink-100 text-purple-700' :
-                            'bg-gradient-to-r from-green-100 to-emerald-100 text-green-700'
-                          }`}>
+                          <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${item.type === 'describe' ? 'bg-gradient-to-r from-blue-100 to-cyan-100 text-blue-700' :
+                              item.type === 'runway' ? 'bg-gradient-to-r from-purple-100 to-pink-100 text-purple-700' :
+                                'bg-gradient-to-r from-green-100 to-emerald-100 text-green-700'
+                            }`}>
                             {item.type === 'describe' ? 'Describe' : item.type === 'runway' ? 'Runway' : 'Metadata'}
                           </span>
                         </div>
-                        
+
                         {/* Describe Content */}
                         {item.type === 'describe' && (
                           <p className="text-slate-700 text-sm leading-relaxed mb-3">{item.description}</p>
                         )}
-                        
+
                         {/* Runway Content */}
                         {item.type === 'runway' && !item.isBatch && (
                           <div className="space-y-2 mb-3">
@@ -433,7 +418,7 @@ const HistoryPage = () => {
                             )}
                           </div>
                         )}
-                        
+
                         {/* Batch Content */}
                         {item.isBatch && (
                           <div className="mb-3">
@@ -445,7 +430,7 @@ const HistoryPage = () => {
                             </div>
                           </div>
                         )}
-                        
+
                         {/* Metadata Content */}
                         {item.type === 'metadata' && (
                           <div className="space-y-2 mb-3">
@@ -463,7 +448,7 @@ const HistoryPage = () => {
                             </div>
                           </div>
                         )}
-                        
+
                         {!item.isBatch && (
                           <div className="flex items-center text-xs text-slate-500 space-x-4">
                             <div className="flex items-center">
@@ -491,7 +476,7 @@ const HistoryPage = () => {
                             </div>
                             <div className="flex items-center">
                               <span className="font-medium text-blue-600">
-                                {item.type === 'metadata' ? 'CSV' : 'TXT'} FILE
+                                TXT FILE
                               </span>
                             </div>
                           </div>
@@ -500,12 +485,12 @@ const HistoryPage = () => {
                     </div>
                     <div className="flex items-center space-x-2 ml-4">
                       {!item.isBatch && (
-                        <button 
+                        <button
                           className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all"
                           onClick={() => {
                             const textToCopy = item.type === 'describe' ? item.description :
-                                             item.type === 'runway' ? `Low: ${item.lowMotion}\nMedium: ${item.mediumMotion}\nHigh: ${item.highMotion}` :
-                                             `Title: ${item.title}\nKeywords: ${item.keywords}\nCategory: ${item.category}`;
+                              item.type === 'runway' ? `Low: ${item.lowMotion}\nMedium: ${item.mediumMotion}\nHigh: ${item.highMotion}` :
+                                `Title: ${item.title}\nKeywords: ${item.keywords}\nCategory: ${item.category}`;
                             navigator.clipboard.writeText(textToCopy || '');
                           }}
                           title="Copy content"
@@ -524,7 +509,7 @@ const HistoryPage = () => {
                         </a>
                       ) : (
                         !item.isBatch && (
-                          <button 
+                          <button
                             className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all"
                             onClick={() => handleDownloadSingle(item)}
                             title={`Generate and download ${item.type === 'metadata' ? 'CSV' : 'TXT'}`}
@@ -551,9 +536,9 @@ const HistoryPage = () => {
                 <span className="font-semibold">{pagination.totalCount}</span> results
               </p>
               <div className="flex space-x-2">
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   disabled={!pagination.hasPrev || loading}
                   onClick={() => handlePageChange(pagination.currentPage - 1)}
                   className="border-slate-300 text-slate-700 hover:bg-slate-50"
@@ -563,9 +548,9 @@ const HistoryPage = () => {
                 <span className="px-4 py-2 text-sm text-slate-700 font-medium">
                   Page {pagination.currentPage} of {pagination.totalPages}
                 </span>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   disabled={!pagination.hasNext || loading}
                   onClick={() => handlePageChange(pagination.currentPage + 1)}
                   className="border-slate-300 text-slate-700 hover:bg-slate-50"

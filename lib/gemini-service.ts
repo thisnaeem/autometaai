@@ -99,10 +99,11 @@ export async function describeImageWithGemini(file: File): Promise<GeminiDescrip
         throw new Error('Gemini API key not configured');
     }
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-    const imagePart = await fileToGenerativePart(file);
+    try {
+        const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+        const imagePart = await fileToGenerativePart(file);
 
-    const prompt = `Describe this image in detail. Focus on:
+        const prompt = `Describe this image in detail. Focus on:
 - The main subject and what's happening
 - Colors, lighting, and atmosphere
 - Any notable details or elements
@@ -110,15 +111,38 @@ export async function describeImageWithGemini(file: File): Promise<GeminiDescrip
 
 Provide a comprehensive description in 2-3 sentences.`;
 
-    const result = await model.generateContent([prompt, imagePart]);
-    const response = await result.response;
-    const description = response.text();
+        const result = await model.generateContent([prompt, imagePart]);
+        const response = await result.response;
+        const description = response.text();
 
-    return {
-        description: description.trim(),
-        confidence: 95,
-        source: 'gemini',
-    };
+        return {
+            description: description.trim(),
+            confidence: 95,
+            source: 'gemini',
+        };
+    } catch (error: any) {
+        // Handle specific Gemini API errors
+        const errorMessage = error?.message || String(error);
+
+        if (errorMessage.includes('Forbidden') || errorMessage.includes('403')) {
+            throw new Error('Gemini API access forbidden. Please check your API key permissions or try again later.');
+        }
+
+        if (errorMessage.includes('QUOTA_EXCEEDED') || errorMessage.includes('429')) {
+            throw new Error('Gemini API rate limit exceeded. Please wait a moment and try again.');
+        }
+
+        if (errorMessage.includes('INVALID_API_KEY') || errorMessage.includes('401')) {
+            throw new Error('Invalid Gemini API key. Please check your API key in settings.');
+        }
+
+        if (errorMessage.includes('SAFETY')) {
+            throw new Error('Image flagged by Gemini safety filters. Please try a different image.');
+        }
+
+        console.error('Gemini describe error:', error);
+        throw new Error(`Gemini API error: ${errorMessage}`);
+    }
 }
 
 /**

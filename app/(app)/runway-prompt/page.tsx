@@ -187,10 +187,6 @@ export default function RunwayPromptPage() {
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8 text-center">
-          <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 border border-blue-200 rounded-full mb-4">
-            <span className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></span>
-            <span className="text-sm text-blue-900 font-medium">Powered by GPT-4o-mini</span>
-          </div>
           <h1 className="text-5xl font-bold text-slate-900 mb-2">
             Runway <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-cyan-600">Video Prompts</span>
           </h1>
