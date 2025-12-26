@@ -18,13 +18,14 @@ interface FileWithPreview extends File {
   preview?: string;
   isVideo?: boolean;
   isSvg?: boolean;
+  originalName?: string;
 }
 
 const STOCK_PLATFORMS = [
-  { id: 'adobe', name: 'Adobe Stock', selected: true },
-  { id: 'shutterstock', name: 'Shutterstock', locked: true },
-  { id: 'istock', name: 'iStock', locked: true },
-  { id: 'getty', name: 'Getty Images', locked: true },
+  { id: 'adobe', name: 'Adobe Stock', selected: true, icon: '/adobe.png' },
+  { id: 'shutterstock', name: 'Shutterstock', locked: true, icon: '/shutterstock.png' },
+  { id: 'istock', name: 'iStock', locked: true, icon: '/istock.png' },
+  { id: 'freepik', name: 'Freepik', locked: true, icon: '/freepik.png' },
 ];
 
 export default function MetadataGenPage() {
@@ -32,9 +33,7 @@ export default function MetadataGenPage() {
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [results, setResults] = useState<MetadataResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [currentFile, setCurrentFile] = useState(0);
-  const [totalFiles, setTotalFiles] = useState(0);
+  const [processingImages, setProcessingImages] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string>('');
 
   // Settings
@@ -43,7 +42,7 @@ export default function MetadataGenPage() {
   const [singleWordKeywords, setSingleWordKeywords] = useState(false);
 
   // Advanced Settings
-  const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [isSilhouette, setIsSilhouette] = useState(false);
   const [customPromptEnabled, setCustomPromptEnabled] = useState(false);
   const [customPrompt, setCustomPrompt] = useState('');
@@ -62,13 +61,13 @@ export default function MetadataGenPage() {
 
       video.onseeked = () => {
         const canvas = document.createElement('canvas');
-        
+
         // Set canvas size - limit to reasonable dimensions for compression
         const maxWidth = 1280;
         const maxHeight = 720;
-        
+
         let { videoWidth, videoHeight } = video;
-        
+
         // Calculate aspect ratio and resize if needed
         if (videoWidth > maxWidth || videoHeight > maxHeight) {
           const aspectRatio = videoWidth / videoHeight;
@@ -80,21 +79,21 @@ export default function MetadataGenPage() {
             videoWidth = maxHeight * aspectRatio;
           }
         }
-        
+
         canvas.width = videoWidth;
         canvas.height = videoHeight;
-        
+
         const ctx = canvas.getContext('2d');
         if (ctx) {
           ctx.drawImage(video, 0, 0, videoWidth, videoHeight);
-          
+
           // Convert to compressed JPEG with quality setting
           const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7); // 70% quality
-          
+
           // Check compressed size and further reduce if needed
           const base64Data = compressedDataUrl.split(',')[1];
           const sizeInKB = (base64Data.length * 3) / 4 / 1024; // Approximate size in KB
-          
+
           if (sizeInKB > 500) { // If still larger than 500KB, compress more
             const furtherCompressed = canvas.toDataURL('image/jpeg', 0.5); // 50% quality
             resolve(furtherCompressed);
@@ -129,6 +128,113 @@ export default function MetadataGenPage() {
     return new File([u8arr], filename, { type: mime });
   };
 
+  // Compress image to target size (20-30KB)
+  const compressImage = useCallback((file: File): Promise<{ compressedFile: File; preview: string }> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+
+      if (!ctx) {
+        reject(new Error('Failed to get canvas context'));
+        return;
+      }
+
+      img.onload = () => {
+        // Calculate dimensions to maintain aspect ratio
+        const maxDimension = 800; // Start with reasonable max dimension
+        let { width, height } = img;
+
+        if (width > height) {
+          if (width > maxDimension) {
+            height = (height * maxDimension) / width;
+            width = maxDimension;
+          }
+        } else {
+          if (height > maxDimension) {
+            width = (width * maxDimension) / height;
+            height = maxDimension;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        // Draw and compress
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // Function to try different quality levels
+        const tryCompress = (quality: number): string => {
+          return canvas.toDataURL('image/jpeg', quality);
+        };
+
+        // Binary search for optimal quality to achieve 20-30KB
+        let minQuality = 0.1;
+        let maxQuality = 0.9;
+        let bestDataUrl = '';
+        let bestSize = 0;
+        const targetMinSize = 15 * 1024; // 15KB minimum
+        const targetMaxSize = 35 * 1024; // 35KB maximum
+
+        // Try different quality levels
+        for (let i = 0; i < 10; i++) {
+          const currentQuality = (minQuality + maxQuality) / 2;
+          const dataUrl = tryCompress(currentQuality);
+          const base64Data = dataUrl.split(',')[1];
+          const sizeInBytes = (base64Data.length * 3) / 4;
+
+          if (sizeInBytes >= targetMinSize && sizeInBytes <= targetMaxSize) {
+            bestDataUrl = dataUrl;
+            bestSize = sizeInBytes;
+            break;
+          } else if (sizeInBytes > targetMaxSize) {
+            maxQuality = currentQuality;
+          } else {
+            minQuality = currentQuality;
+          }
+
+          // Keep track of the best attempt
+          if (!bestDataUrl || Math.abs(sizeInBytes - 25 * 1024) < Math.abs(bestSize - 25 * 1024)) {
+            bestDataUrl = dataUrl;
+            bestSize = sizeInBytes;
+          }
+        }
+
+        // If still too large, reduce dimensions
+        if (bestSize > targetMaxSize) {
+          const scaleFactor = Math.sqrt(targetMaxSize / bestSize);
+          canvas.width = Math.floor(width * scaleFactor);
+          canvas.height = Math.floor(height * scaleFactor);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          bestDataUrl = tryCompress(0.8);
+        }
+
+        // Create compressed file
+        const compressedFileName = file.name.replace(/\.[^/.]+$/, '') + '_compressed.jpg';
+        const compressedFile = dataURLtoFile(bestDataUrl, compressedFileName);
+
+        resolve({
+          compressedFile,
+          preview: bestDataUrl
+        });
+      };
+
+      img.onerror = () => {
+        reject(new Error('Failed to load image for compression'));
+      };
+
+      // Load the image
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = () => {
+        reject(new Error('Failed to read file'));
+      };
+      reader.readAsDataURL(file);
+    });
+  }, []);
+
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     const filesWithMeta: FileWithPreview[] = [];
     const previews: string[] = [];
@@ -138,27 +244,54 @@ export default function MetadataGenPage() {
       const isSvg = file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg');
 
       let preview = '';
+      let processedFile = file;
 
       try {
         if (isVideo) {
-          preview = await extractVideoFrame(file);
-        } else {
+          // For videos, extract frame and compress it
+          const frameDataUrl = await extractVideoFrame(file);
+          const frameFile = dataURLtoFile(frameDataUrl, `${file.name}_frame.jpg`);
+          const compressed = await compressImage(frameFile);
+          processedFile = compressed.compressedFile;
+          preview = compressed.preview;
+        } else if (isSvg) {
+          // For SVG files, don't compress, just read as data URL
           preview = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
             reader.onload = () => resolve(reader.result as string);
             reader.onerror = reject;
             reader.readAsDataURL(file);
           });
+          // Keep original SVG file
+          processedFile = file;
+        } else {
+          // For regular images, compress them
+          const compressed = await compressImage(file);
+          processedFile = compressed.compressedFile;
+          preview = compressed.preview;
         }
       } catch (err) {
         console.error('Error processing file:', err);
-        preview = '';
+        // Fallback to original file and basic preview
+        processedFile = file;
+        try {
+          preview = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+          });
+        } catch (previewErr) {
+          console.error('Error creating preview:', previewErr);
+          preview = '';
+        }
       }
 
-      const fileWithMeta = Object.assign(file, {
+      const fileWithMeta = Object.assign(processedFile, {
         preview,
         isVideo,
-        isSvg
+        isSvg,
+        originalName: file.name // Keep track of original filename
       });
 
       filesWithMeta.push(fileWithMeta);
@@ -168,7 +301,7 @@ export default function MetadataGenPage() {
     setSelectedFiles(prev => [...prev, ...filesWithMeta]);
     setPreviewUrls(prev => [...prev, ...previews]);
     setError('');
-  }, []);
+  }, [compressImage]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -190,109 +323,38 @@ export default function MetadataGenPage() {
     setIsProcessing(true);
     setError('');
     setResults([]);
-    setProgress(0);
+    setProcessingImages(new Set());
 
     try {
-      if (selectedFiles.length > 1) {
-        // Process images one by one to show real-time progress
-        setTotalFiles(selectedFiles.length);
-        const newResults: MetadataResult[] = [];
+      // Process images in batches of 10
+      const batchSize = 10;
+      const allResults: MetadataResult[] = [];
 
-        for (let i = 0; i < selectedFiles.length; i++) {
-          setCurrentFile(i + 1);
-          setProgress(Math.round(((i + 1) / selectedFiles.length) * 100));
+      for (let i = 0; i < selectedFiles.length; i += batchSize) {
+        const batch = selectedFiles.slice(i, i + batchSize);
 
-          const file = selectedFiles[i];
-          const formData = new FormData();
-          
-          // For videos, extract and compress frame before sending
-          let fileToSend = file;
-          if (file.isVideo) {
-            try {
-              const frameDataUrl = await extractVideoFrame(file);
-              fileToSend = dataURLtoFile(frameDataUrl, `${file.name}_frame.jpg`);
-            } catch (err) {
-              console.error('Failed to extract video frame:', err);
-              // Fall back to original file if frame extraction fails
-            }
-          }
-          
-          formData.append('image', fileToSend);
-          formData.append('isVideo', (file.isVideo || false).toString());
-          formData.append('isSvg', (file.isSvg || false).toString());
-          formData.append('titleLength', titleLength.toString());
-          formData.append('keywordCount', keywordCount.toString());
-          formData.append('singleWordKeywords', singleWordKeywords.toString());
-          formData.append('isSilhouette', isSilhouette.toString());
-          formData.append('customPrompt', customPromptEnabled ? customPrompt : '');
-          formData.append('whiteBackground', whiteBackground.toString());
-          formData.append('transparentBackground', transparentBackground.toString());
-          formData.append('prohibitedWords', prohibitedWordsEnabled ? prohibitedWords : '');
+        // Mark current batch images as processing
+        const currentBatchNames = new Set(batch.map(file => file.originalName || file.name));
+        setProcessingImages(currentBatchNames);
 
-          try {
-            const response = await fetch('/api/generate-metadata', {
-              method: 'POST',
-              body: formData,
-            });
-
-            if (!response.ok) {
-              const errorData = await response.json();
-              throw new Error(errorData.error || 'Failed to generate metadata');
-            }
-
-            const data = await response.json();
-            newResults.push({
-              filename: file.name,
-              title: data.title,
-              keywords: data.keywords,
-              category: data.category,
-            });
-          } catch (err: unknown) {
-            newResults.push({
-              filename: file.name,
-              title: '',
-              keywords: '',
-              category: '',
-              error: err instanceof Error ? err.message : 'Failed to process image',
-            });
-          }
-
-          setResults([...newResults]);
-        }
-
-        // After all processed, create batch history record (without re-processing)
-        const successfulResults = newResults.filter(r => !r.error);
-        if (successfulResults.length > 0) {
-          try {
-            await fetch('/api/generate-metadata/batch-save', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ results: successfulResults }),
-            });
-          } catch (err) {
-            console.error('Failed to save batch history:', err);
-          }
-        }
-      } else {
-        // Use single API for one image
-        const file = selectedFiles[0];
+        // Create FormData for batch processing
         const formData = new FormData();
-        
-        // For videos, extract and compress frame before sending
-        let fileToSend = file;
-        if (file.isVideo) {
-          try {
-            const frameDataUrl = await extractVideoFrame(file);
-            fileToSend = dataURLtoFile(frameDataUrl, `${file.name}_frame.jpg`);
-          } catch (err) {
-            console.error('Failed to extract video frame:', err);
-            // Fall back to original file if frame extraction fails
-          }
+
+        // Process video frames for the batch
+        for (let j = 0; j < batch.length; j++) {
+          const file = batch[j];
+          const fileToSend = file;
+
+          // For videos, the file is already processed (compressed frame)
+          // For images, the file is already compressed
+          // Just send the processed file directly
+          formData.append(`image_${j}`, fileToSend);
+
+          // Also send the original filename for proper result mapping
+          formData.append(`originalName_${j}`, file.originalName || file.name);
         }
-        
-        formData.append('image', fileToSend);
-        formData.append('isVideo', (file.isVideo || false).toString());
-        formData.append('isSvg', (file.isSvg || false).toString());
+
+        // Add settings to formData
         formData.append('titleLength', titleLength.toString());
         formData.append('keywordCount', keywordCount.toString());
         formData.append('singleWordKeywords', singleWordKeywords.toString());
@@ -302,49 +364,62 @@ export default function MetadataGenPage() {
         formData.append('transparentBackground', transparentBackground.toString());
         formData.append('prohibitedWords', prohibitedWordsEnabled ? prohibitedWords : '');
 
-        const response = await fetch('/api/generate-metadata', {
-          method: 'POST',
-          body: formData,
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || 'Failed to generate metadata');
-        }
-
-        const data = await response.json();
-        const newResults = [
-          {
-            filename: file.name,
-            title: data.title,
-            keywords: data.keywords,
-            category: data.category,
-          },
-        ];
-        setResults(newResults);
-        setProgress(100);
-
-        // Create batch record for single file (like Runway Prompt does)
         try {
-          const bulkFormData = new FormData();
-          bulkFormData.append('images', file);
-          bulkFormData.append('titleLength', titleLength.toString());
-          bulkFormData.append('keywordCount', keywordCount.toString());
-          bulkFormData.append('singleWordKeywords', singleWordKeywords.toString());
-
-          await fetch('/api/generate-metadata/batch-save', {
+          const response = await fetch('/api/generate-metadata/batch', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ results: newResults }),
+            body: formData,
           });
-        } catch (err) {
-          console.error('Failed to save batch history:', err);
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to generate metadata');
+          }
+
+          const data = await response.json();
+
+          interface ApiMetadataResult {
+            filename: string;
+            title?: string;
+            keywords?: string;
+            category?: string;
+            error?: string;
+          }
+
+          // Convert batch results to our format
+          const batchResults: MetadataResult[] = data.results.map((result: ApiMetadataResult) => ({
+            filename: result.filename,
+            title: result.title || '',
+            keywords: result.keywords || '',
+            category: result.category || '',
+            error: result.error
+          }));
+
+          allResults.push(...batchResults);
+          setResults([...allResults]);
+
+        } catch (err: unknown) {
+          // If batch fails, add error results for all files in the batch
+          const errorResults: MetadataResult[] = batch.map(file => ({
+            filename: file.originalName || file.name,
+            title: '',
+            keywords: '',
+            category: '',
+            error: err instanceof Error ? err.message : 'Failed to process batch',
+          }));
+
+          allResults.push(...errorResults);
+          setResults([...allResults]);
         }
+
+        // Clear processing status for this batch
+        setProcessingImages(new Set());
       }
+
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'An error occurred while processing images');
     } finally {
       setIsProcessing(false);
+      setProcessingImages(new Set());
     }
   };
 
@@ -380,19 +455,15 @@ export default function MetadataGenPage() {
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8 text-center">
-          <div className="inline-flex items-center gap-2 px-4 py-2 bg-cyan-50 border border-cyan-200 rounded-full mb-4">
-            <span className="w-2 h-2 bg-cyan-600 rounded-full animate-pulse"></span>
-            <span className="text-sm text-cyan-900 font-medium">Stock Intelligence</span>
-          </div>
           <h1 className="text-5xl font-bold text-slate-900 mb-2">
             Generate <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-600 to-blue-600">Metadata</span>
           </h1>
           <p className="text-slate-600 text-lg">AI-Powered Titles, Keywords & Categories for Stock Assets</p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Upload & Settings */}
-          <div className="lg:col-span-2 space-y-6">
+          <div className="space-y-6">
             <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-6">
               <h2 className="text-xl font-semibold text-slate-900 mb-4 flex items-center">
                 <HugeiconsIcon icon={Upload04Icon} size={24} className="mr-2 text-cyan-600" />
@@ -416,7 +487,6 @@ export default function MetadataGenPage() {
                   Supports: JPG, PNG, WEBP, SVG, MP4, MOV, AVI, WEBM (Max 150MB per file)
                 </p>
               </div>
-
               {selectedFiles.length > 0 && (
                 <div className="mt-6 space-y-3">
                   <div className="flex items-center justify-between">
@@ -435,98 +505,99 @@ export default function MetadataGenPage() {
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-6 gap-3">
-                    {previewUrls.map((url, index) => {
-                      const file = selectedFiles[index];
-                      const isVideo = file?.isVideo;
-                      const isSvg = file?.isSvg;
+                  <div className="max-h-80 overflow-y-auto border border-slate-200 rounded-lg p-3 bg-slate-50">
+                    <div className="grid grid-cols-4 gap-3">
+                      {previewUrls.map((url, index) => {
+                        const file = selectedFiles[index];
+                        const isVideo = file?.isVideo;
+                        const isSvg = file?.isSvg;
+                        const displayName = file?.originalName || file?.name;
+                        const isProcessingThisImage = processingImages.has(displayName || '');
+                        const hasResult = results.find(r => r.filename === displayName);
+                        const hasError = hasResult?.error;
 
-                      return (
-                        <div key={index} className="relative group">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={url}
-                            alt={`Preview of ${file?.name}`}
-                            className={`w-full h-16 object-cover rounded-lg border border-slate-200 ${isSvg ? 'bg-white p-1' : ''
-                              }`}
-                          />
-                          {isVideo && (
-                            <div className="absolute bottom-1 right-1 bg-black/70 text-white text-[8px] px-1 py-0.5 rounded font-bold">
-                              VIDEO
-                            </div>
-                          )}
-                          {isSvg && (
-                            <div className="absolute bottom-1 right-1 bg-purple-600 text-white text-[8px] px-1 py-0.5 rounded font-bold">
-                              SVG
-                            </div>
-                          )}
-                          <button
-                            onClick={() => removeFile(index)}
-                            className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-xs"
-                          >
-                            ×
-                          </button>
-                        </div>
-                      );
-                    })}
+                        return (
+                          <div key={index} className="relative group">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={url}
+                              alt={`Preview of ${displayName}`}
+                              className={`w-full h-20 object-cover rounded-lg border transition-all ${hasError
+                                ? 'border-red-300 opacity-60'
+                                : hasResult
+                                  ? 'border-green-300'
+                                  : 'border-slate-200'
+                                } ${isSvg ? 'bg-white p-1' : ''}`}
+                            />
+
+                            {/* Processing Loader Overlay */}
+                            {isProcessingThisImage && (
+                              <div className="absolute inset-0 rounded-lg flex items-center justify-center">
+                                <div className="w-8 h-8 border-3 border-white border-t-transparent rounded-full animate-spin shadow-lg"></div>
+                              </div>
+                            )}
+
+                            {/* Success Indicator */}
+                            {hasResult && !hasError && (
+                              <div className="absolute top-1 right-1 w-4 h-4 bg-green-500 rounded-full flex items-center justify-center">
+                                <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                </svg>
+                              </div>
+                            )}
+
+                            {/* Error Indicator */}
+                            {hasError && (
+                              <div className="absolute top-1 right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center">
+                                <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                                </svg>
+                              </div>
+                            )}
+
+                            {/* Video Badge */}
+                            {isVideo && (
+                              <div className="absolute bottom-1 right-1 bg-black/70 text-white text-[8px] px-1 py-0.5 rounded font-bold">
+                                VIDEO
+                              </div>
+                            )}
+
+                            {/* SVG Badge */}
+                            {isSvg && (
+                              <div className="absolute bottom-1 right-1 bg-purple-600 text-white text-[8px] px-1 py-0.5 rounded font-bold">
+                                SVG
+                              </div>
+                            )}
+
+                            {/* Remove Button */}
+                            <button
+                              onClick={() => removeFile(index)}
+                              className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-10"
+                              disabled={isProcessingThisImage}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Core Parameters */}
-            <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-6">
-              <h3 className="text-lg font-semibold text-slate-900 mb-4">Core Parameters</h3>
-
-              <div className="space-y-6">
-                <div>
-                  <div className="flex justify-between mb-2">
-                    <label className="text-sm font-medium text-slate-700">Title Length</label>
-                    <span className="text-sm font-semibold text-cyan-600">{titleLength} chars</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="50"
-                    max="200"
-                    step="10"
-                    value={titleLength}
-                    onChange={(e) => setTitleLength(parseInt(e.target.value))}
-                    className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-cyan-600"
-                    suppressHydrationWarning
-                  />
-                </div>
-
-                <div>
-                  <div className="flex justify-between mb-2">
-                    <label className="text-sm font-medium text-slate-700">Keywords Count</label>
-                    <span className="text-sm font-semibold text-cyan-600">{keywordCount} keywords</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="10"
-                    max="50"
-                    step="5"
-                    value={keywordCount}
-                    onChange={(e) => setKeywordCount(parseInt(e.target.value))}
-                    className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-cyan-600"
-                    suppressHydrationWarning
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Advanced Settings Dropdown */}
-            <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-visible relative z-10">
+            {/* Collapsible Settings Panel */}
+            <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
               <button
-                onClick={() => setShowAdvancedSettings(!showAdvancedSettings)}
-                className="w-full px-6 py-4 bg-gradient-to-r from-orange-500 to-red-500 text-white font-bold text-sm flex items-center justify-between hover:from-orange-600 hover:to-red-600 transition-all shadow-lg"
+                onClick={() => setShowSettings(!showSettings)}
+                className="w-full px-6 py-4 bg-slate-100 text-slate-700 font-medium text-sm flex items-center justify-between hover:bg-slate-200 transition-all"
               >
                 <span className="flex items-center gap-2">
                   <HugeiconsIcon icon={Settings02Icon} size={20} />
-                  SETTINGS
+                  Settings
                 </span>
                 <svg
-                  className={`w-4 h-4 transition-transform ${showAdvancedSettings ? 'rotate-180' : ''}`}
+                  className={`w-4 h-4 transition-transform ${showSettings ? 'rotate-180' : ''}`}
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
@@ -536,227 +607,261 @@ export default function MetadataGenPage() {
                 </svg>
               </button>
 
-              <div className={`transition-all duration-300 ${showAdvancedSettings ? 'max-h-[800px]' : 'max-h-0 overflow-hidden'}`}>
-                <div className="p-6 space-y-4 border-t border-slate-200 overflow-visible">
-                  {/* Silhouette */}
-                  <div className="flex items-center justify-between py-4 border-b border-slate-200 relative">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-slate-900 uppercase tracking-wide">SILHOUETTE</span>
-                      <div className="relative group">
-                        <HugeiconsIcon icon={InformationCircleIcon} size={16} className="text-slate-400 cursor-help" />
-                        <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 p-3 bg-slate-900 text-white text-xs rounded-lg shadow-xl z-[9999]">
-                          <div className="absolute left-4 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-900"></div>
-                          Enable this if your image is a silhouette (solid shape with no internal details). This helps AI generate more accurate metadata.
+              <div className={`transition-all duration-300 ${showSettings ? 'max-h-[1000px]' : 'max-h-0 overflow-hidden'}`}>
+                <div className="p-6">
+                  {/* Core Parameters */}
+                  <div className="mb-8">
+                    <h4 className="text-md font-semibold text-slate-800 mb-4">Core Parameters</h4>
+                    <div className="space-y-6">
+                      <div>
+                        <div className="flex justify-between mb-2">
+                          <label className="text-sm font-medium text-slate-700">Title Length</label>
+                          <span className="text-sm font-semibold text-cyan-600">{titleLength} chars</span>
                         </div>
+                        <input
+                          type="range"
+                          min="50"
+                          max="200"
+                          step="10"
+                          value={titleLength}
+                          onChange={(e) => setTitleLength(parseInt(e.target.value))}
+                          className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-cyan-600"
+                          suppressHydrationWarning
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between mb-2">
+                          <label className="text-sm font-medium text-slate-700">Keywords Count</label>
+                          <span className="text-sm font-semibold text-cyan-600">{keywordCount} keywords</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="10"
+                          max="50"
+                          step="5"
+                          value={keywordCount}
+                          onChange={(e) => setKeywordCount(parseInt(e.target.value))}
+                          className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-cyan-600"
+                          suppressHydrationWarning
+                        />
                       </div>
                     </div>
-                    <button
-                      onClick={() => setIsSilhouette(!isSilhouette)}
-                      className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${isSilhouette ? 'bg-gradient-to-r from-cyan-500 to-blue-500' : 'bg-slate-300'
-                        }`}
-                    >
-                      <span
-                        className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-md ${isSilhouette ? 'translate-x-5' : ''
-                          }`}
-                      />
-                    </button>
                   </div>
 
-                  {/* Custom Prompt */}
-                  <div className="border-b border-slate-200 pb-4 relative">
-                    <div className="flex items-center justify-between py-4">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold text-slate-900 uppercase tracking-wide">CUSTOM PROMPT</span>
-                        <div className="relative group">
-                          <HugeiconsIcon icon={InformationCircleIcon} size={16} className="text-slate-400 cursor-help" />
-                          <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 p-3 bg-slate-900 text-white text-xs rounded-lg shadow-xl z-[9999]">
-                            <div className="absolute left-4 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-900"></div>
-                            Add custom instructions to guide the AI. For example: "Focus on mood and atmosphere" or "Emphasize technical details".
+                  {/* Advanced Settings */}
+                  <div className="mb-8">
+                    <h4 className="text-md font-semibold text-slate-800 mb-4">Advanced Settings</h4>
+                    <div className="space-y-4">
+                      {/* Silhouette */}
+                      <div className="flex items-center justify-between py-3 border-b border-slate-200">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-slate-700">SILHOUETTE</span>
+                          <div className="relative group">
+                            <HugeiconsIcon icon={InformationCircleIcon} size={16} className="text-slate-400 cursor-help" />
+                            <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 p-3 bg-slate-900 text-white text-xs rounded-lg shadow-xl z-[9999]">
+                              <div className="absolute left-4 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-900"></div>
+                              Enable this if your image is a silhouette (solid shape with no internal details). This helps AI generate more accurate metadata.
+                            </div>
                           </div>
                         </div>
-                      </div>
-                      <button
-                        onClick={() => setCustomPromptEnabled(!customPromptEnabled)}
-                        className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${customPromptEnabled ? 'bg-gradient-to-r from-cyan-500 to-blue-500' : 'bg-slate-300'
-                          }`}
-                      >
-                        <span
-                          className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-md ${customPromptEnabled ? 'translate-x-5' : ''
+                        <button
+                          onClick={() => setIsSilhouette(!isSilhouette)}
+                          className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${isSilhouette ? 'bg-gradient-to-r from-cyan-500 to-blue-500' : 'bg-slate-300'
                             }`}
-                        />
-                      </button>
-                    </div>
-                    {customPromptEnabled && (
-                      <input
-                        type="text"
-                        value={customPrompt}
-                        onChange={(e) => setCustomPrompt(e.target.value)}
-                        placeholder="e.g. Focus on mood..."
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 mt-2"
-                      />
-                    )}
-                  </div>
-
-                  {/* White Background */}
-                  <div className="flex items-center justify-between py-4 border-b border-slate-200 relative">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-slate-900 uppercase tracking-wide">WHITE BACKGROUND</span>
-                      <div className="relative group">
-                        <HugeiconsIcon icon={InformationCircleIcon} size={16} className="text-slate-400 cursor-help" />
-                        <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 p-3 bg-slate-900 text-white text-xs rounded-lg shadow-xl z-[9999]">
-                          <div className="absolute left-4 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-900"></div>
-                          Enable if your image has a white or light-colored background. This helps generate appropriate keywords and descriptions.
-                        </div>
+                        >
+                          <span
+                            className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-md ${isSilhouette ? 'translate-x-5' : ''
+                              }`}
+                          />
+                        </button>
                       </div>
-                    </div>
-                    <button
-                      onClick={() => setWhiteBackground(!whiteBackground)}
-                      className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${whiteBackground ? 'bg-gradient-to-r from-cyan-500 to-blue-500' : 'bg-slate-300'
-                        }`}
-                    >
-                      <span
-                        className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-md ${whiteBackground ? 'translate-x-5' : ''
-                          }`}
-                      />
-                    </button>
-                  </div>
 
-                  {/* Transparent Background */}
-                  <div className="flex items-center justify-between py-4 border-b border-slate-200 relative">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-slate-900 uppercase tracking-wide">TRANSPARENT BACKGROUND</span>
-                      <div className="relative group">
-                        <HugeiconsIcon icon={InformationCircleIcon} size={16} className="text-slate-400 cursor-help" />
-                        <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 p-3 bg-slate-900 text-white text-xs rounded-lg shadow-xl z-[9999]">
-                          <div className="absolute left-4 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-900"></div>
-                          Enable for PNG images with transparent backgrounds. The title will include "isolated on transparent background" for stock platforms.
+                      {/* Custom Prompt */}
+                      <div className="border-b border-slate-200 pb-4 relative">
+                        <div className="flex items-center justify-between py-4">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold text-slate-900 uppercase tracking-wide">CUSTOM PROMPT</span>
+                            <div className="relative group">
+                              <HugeiconsIcon icon={InformationCircleIcon} size={16} className="text-slate-400 cursor-help" />
+                              <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 p-3 bg-slate-900 text-white text-xs rounded-lg shadow-xl z-[9999]">
+                                <div className="absolute left-4 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-900"></div>
+                                Add custom instructions to guide the AI. For example: &ldquo;Focus on mood and atmosphere&rdquo; or &ldquo;Emphasize technical details&rdquo;.
+                              </div>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => setCustomPromptEnabled(!customPromptEnabled)}
+                            className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${customPromptEnabled ? 'bg-gradient-to-r from-cyan-500 to-blue-500' : 'bg-slate-300'
+                              }`}
+                          >
+                            <span
+                              className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-md ${customPromptEnabled ? 'translate-x-5' : ''
+                                }`}
+                            />
+                          </button>
                         </div>
+                        {customPromptEnabled && (
+                          <input
+                            type="text"
+                            value={customPrompt}
+                            onChange={(e) => setCustomPrompt(e.target.value)}
+                            placeholder="e.g. Focus on mood..."
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 mt-2"
+                          />
+                        )}
                       </div>
-                    </div>
-                    <button
-                      onClick={() => setTransparentBackground(!transparentBackground)}
-                      className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${transparentBackground ? 'bg-gradient-to-r from-cyan-500 to-blue-500' : 'bg-slate-300'
-                        }`}
-                    >
-                      <span
-                        className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-md ${transparentBackground ? 'translate-x-5' : ''
-                          }`}
-                      />
-                    </button>
-                  </div>
 
-                  {/* Prohibited Words */}
-                  <div className="border-b border-slate-200 pb-4 relative">
-                    <div className="flex items-center justify-between py-4">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold text-slate-900 uppercase tracking-wide">PROHIBITED WORDS</span>
-                        <div className="relative group">
-                          <HugeiconsIcon icon={InformationCircleIcon} size={16} className="text-slate-400 cursor-help" />
-                          <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 p-3 bg-slate-900 text-white text-xs rounded-lg shadow-xl z-[9999]">
-                            <div className="absolute left-4 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-900"></div>
-                            List words to exclude from metadata (comma-separated). Example: "text, watermark, blur, logo". Useful for avoiding unwanted terms.
+                      {/* White Background */}
+                      <div className="flex items-center justify-between py-4 border-b border-slate-200 relative">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold text-slate-900 uppercase tracking-wide">WHITE BACKGROUND</span>
+                          <div className="relative group">
+                            <HugeiconsIcon icon={InformationCircleIcon} size={16} className="text-slate-400 cursor-help" />
+                            <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 p-3 bg-slate-900 text-white text-xs rounded-lg shadow-xl z-[9999]">
+                              <div className="absolute left-4 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-900"></div>
+                              Enable if your image has a white or light-colored background. This helps generate appropriate keywords and descriptions.
+                            </div>
                           </div>
                         </div>
-                      </div>
-                      <button
-                        onClick={() => setProhibitedWordsEnabled(!prohibitedWordsEnabled)}
-                        className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${prohibitedWordsEnabled ? 'bg-gradient-to-r from-cyan-500 to-blue-500' : 'bg-slate-300'
-                          }`}
-                      >
-                        <span
-                          className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-md ${prohibitedWordsEnabled ? 'translate-x-5' : ''
+                        <button
+                          onClick={() => setWhiteBackground(!whiteBackground)}
+                          className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${whiteBackground ? 'bg-gradient-to-r from-cyan-500 to-blue-500' : 'bg-slate-300'
                             }`}
-                        />
-                      </button>
-                    </div>
-                    {prohibitedWordsEnabled && (
-                      <input
-                        type="text"
-                        value={prohibitedWords}
-                        onChange={(e) => setProhibitedWords(e.target.value)}
-                        placeholder="e.g. text, watermark, blur..."
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 mt-2"
-                      />
-                    )}
-                  </div>
-
-                  {/* Single Word Keywords */}
-                  <div className="flex items-center justify-between py-4 relative">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-slate-900 uppercase tracking-wide">SINGLE WORD KEYWORDS</span>
-                      <div className="relative group">
-                        <HugeiconsIcon icon={InformationCircleIcon} size={16} className="text-slate-400 cursor-help" />
-                        <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 p-3 bg-slate-900 text-white text-xs rounded-lg shadow-xl z-[9999]">
-                          <div className="absolute left-4 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-900"></div>
-                          Generate only single-word keywords instead of phrases. Example: "sunset" instead of "beautiful sunset". Some platforms prefer this format.
-                        </div>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setSingleWordKeywords(!singleWordKeywords)}
-                      className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${singleWordKeywords ? 'bg-gradient-to-r from-cyan-500 to-blue-500' : 'bg-slate-300'
-                        }`}
-                    >
-                      <span
-                        className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-md ${singleWordKeywords ? 'translate-x-5' : ''
-                          }`}
-                      />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Platform Selection */}
-            <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-6">
-              <h3 className="text-lg font-semibold text-slate-900 mb-4">Export Platform</h3>
-              <div className="relative">
-                {/* Background Rectangle */}
-                <div className="absolute inset-0 bg-gradient-to-r from-slate-50 via-slate-100 to-slate-50 rounded-xl -z-10"></div>
-
-                {/* Platforms in one line */}
-                <div className="flex items-center justify-between gap-4 p-4">
-                  {STOCK_PLATFORMS.map((platform) => (
-                    <div
-                      key={platform.id}
-                      className={`relative flex-1 p-4 rounded-lg border-2 flex items-center justify-center transition-all duration-300 ${platform.selected
-                        ? 'border-cyan-500 bg-white shadow-lg scale-105'
-                        : 'border-transparent bg-white/50 opacity-60'
-                        } ${platform.locked ? 'cursor-not-allowed' : 'cursor-pointer hover:scale-105'}`}
-                    >
-                      {/* Platform Logo */}
-                      <div className="relative h-10 w-full flex items-center justify-center">
-                        {platform.id === 'adobe' && (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src="/adobe.png" alt="Adobe Stock" className="h-10 w-auto object-contain" />
-                        )}
-                        {platform.id === 'shutterstock' && (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src="/shutterstock.png" alt="Shutterstock" className="h-10 w-auto object-contain" />
-                        )}
-                        {platform.id === 'istock' && (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src="/istock.png" alt="iStock" className="h-10 w-auto object-contain" />
-                        )}
-                        {platform.id === 'getty' && (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src="/freepik.png" alt="Getty Images" className="h-10 w-auto object-contain" />
-                        )}
+                        >
+                          <span
+                            className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-md ${whiteBackground ? 'translate-x-5' : ''
+                              }`}
+                          />
+                        </button>
                       </div>
 
-                      {/* Coming Soon Badge */}
-                      {platform.locked && (
-                        <div className="absolute -top-2 -right-2 bg-slate-400 text-white text-[10px] px-2 py-1 rounded-full font-bold">
-                          Soon
+                      {/* Transparent Background */}
+                      <div className="flex items-center justify-between py-4 border-b border-slate-200 relative">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold text-slate-900 uppercase tracking-wide">TRANSPARENT BACKGROUND</span>
+                          <div className="relative group">
+                            <HugeiconsIcon icon={InformationCircleIcon} size={16} className="text-slate-400 cursor-help" />
+                            <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 p-3 bg-slate-900 text-white text-xs rounded-lg shadow-xl z-[9999]">
+                              <div className="absolute left-4 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-900"></div>
+                              Enable if your image has a transparent background. This helps generate appropriate keywords and descriptions.
+                            </div>
+                          </div>
                         </div>
-                      )}
+                        <button
+                          onClick={() => setTransparentBackground(!transparentBackground)}
+                          className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${transparentBackground ? 'bg-gradient-to-r from-cyan-500 to-blue-500' : 'bg-slate-300'
+                            }`}
+                        >
+                          <span
+                            className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-md ${transparentBackground ? 'translate-x-5' : ''
+                              }`}
+                          />
+                        </button>
+                      </div>
 
-                      {/* Selected Indicator */}
-                      {platform.selected && (
-                        <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-8 h-1 bg-cyan-500 rounded-full"></div>
-                      )}
+                      {/* Single Word Keywords */}
+                      <div className="flex items-center justify-between py-4 border-b border-slate-200 relative">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold text-slate-900 uppercase tracking-wide">SINGLE WORD KEYWORDS</span>
+                          <div className="relative group">
+                            <HugeiconsIcon icon={InformationCircleIcon} size={16} className="text-slate-400 cursor-help" />
+                            <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 p-3 bg-slate-900 text-white text-xs rounded-lg shadow-xl z-[9999]">
+                              <div className="absolute left-4 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-900"></div>
+                              Generate only single-word keywords instead of phrases. Useful for certain stock platforms.
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => setSingleWordKeywords(!singleWordKeywords)}
+                          className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${singleWordKeywords ? 'bg-gradient-to-r from-cyan-500 to-blue-500' : 'bg-slate-300'
+                            }`}
+                        >
+                          <span
+                            className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-md ${singleWordKeywords ? 'translate-x-5' : ''
+                              }`}
+                          />
+                        </button>
+                      </div>
+
+                      {/* Prohibited Words */}
+                      <div className="border-b border-slate-200 pb-4 relative">
+                        <div className="flex items-center justify-between py-4">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold text-slate-900 uppercase tracking-wide">PROHIBITED WORDS</span>
+                            <div className="relative group">
+                              <HugeiconsIcon icon={InformationCircleIcon} size={16} className="text-slate-400 cursor-help" />
+                              <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 p-3 bg-slate-900 text-white text-xs rounded-lg shadow-xl z-[9999]">
+                                <div className="absolute left-4 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-900"></div>
+                                List words to avoid in keywords and titles. Separate with commas.
+                              </div>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => setProhibitedWordsEnabled(!prohibitedWordsEnabled)}
+                            className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${prohibitedWordsEnabled ? 'bg-gradient-to-r from-cyan-500 to-blue-500' : 'bg-slate-300'
+                              }`}
+                          >
+                            <span
+                              className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-md ${prohibitedWordsEnabled ? 'translate-x-5' : ''
+                                }`}
+                            />
+                          </button>
+                        </div>
+                        {prohibitedWordsEnabled && (
+                          <input
+                            type="text"
+                            value={prohibitedWords}
+                            onChange={(e) => setProhibitedWords(e.target.value)}
+                            placeholder="e.g. brand, logo, trademark"
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 mt-2"
+                          />
+                        )}
+                      </div>
                     </div>
-                  ))}
+                  </div>
+
+                  {/* Stock Platforms */}
+                  <div className="mb-6">
+                    <h4 className="text-md font-semibold text-slate-800 mb-4">Stock Platforms</h4>
+                    <div className="flex gap-3">
+                      {STOCK_PLATFORMS.map((platform) => (
+                        <div
+                          key={platform.id}
+                          className={`flex-1 p-3 rounded-lg border transition-all ${platform.selected
+                            ? 'border-cyan-500 bg-cyan-50'
+                            : platform.locked
+                              ? 'border-slate-200 bg-slate-50 opacity-50'
+                              : 'border-slate-200 bg-white hover:border-slate-300'
+                            }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            {/* Platform Icon */}
+                            <div className="w-6 h-6 flex-shrink-0">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={platform.icon}
+                                alt={`${platform.name} logo`}
+                                className="w-full h-full object-contain"
+                              />
+                            </div>
+
+                            <div className="flex-1 flex items-center justify-between">
+                              <span className={`text-xs font-medium ${platform.locked ? 'text-slate-400' : 'text-slate-700'
+                                }`}>
+                                {platform.name}
+                              </span>
+                              {platform.locked && (
+                                <span className="text-xs bg-slate-100 text-slate-500 px-2 py-1 rounded font-medium">
+                                  Soon
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -777,7 +882,7 @@ export default function MetadataGenPage() {
               {isProcessing ? (
                 <>
                   <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                  {totalFiles > 1 ? `Processing ${currentFile}/${totalFiles}` : `Processing... ${progress}%`}
+                  Processing...
                 </>
               ) : (
                 <>
@@ -802,7 +907,7 @@ export default function MetadataGenPage() {
 
           {/* Results */}
           <div className="space-y-6">
-            <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-6 min-h-[600px]">
+            <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-6 min-h-[500px]">
               <h2 className="text-xl font-semibold text-slate-900 mb-4 flex items-center">
                 <HugeiconsIcon icon={Image02Icon} size={24} className="mr-2 text-cyan-600" />
                 Results ({results.length})
@@ -813,11 +918,11 @@ export default function MetadataGenPage() {
                   <HugeiconsIcon icon={Image02Icon} size={80} className="text-slate-300 mb-4" />
                   <p className="text-slate-500 text-lg font-medium">No results yet</p>
                   <p className="text-slate-400 text-sm mt-2">
-                    Upload images and generate metadata
+                    Upload images and click &ldquo;Generate&rdquo; to see metadata
                   </p>
                 </div>
               ) : (
-                <div className="space-y-4 max-h-[800px] overflow-y-auto">
+                <div className="space-y-4 max-h-[600px] overflow-y-auto">
                   {results.map((result, index) => {
                     const file = selectedFiles[index];
                     const isVideo = file?.isVideo;

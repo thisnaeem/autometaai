@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireAdmin } from "@/lib/auth-server"
 import { prisma } from "@/lib/prisma"
-import { UserRole } from "@prisma/client"
 
 export async function PATCH(
   request: NextRequest,

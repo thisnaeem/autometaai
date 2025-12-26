@@ -48,13 +48,14 @@ async function fileToGenerativePart(file: File): Promise<{
     // Determine the proper MIME type
     let mimeType = file.type;
 
-    // Handle SVG files
+    // Handle SVG files - convert to PNG for Gemini compatibility
     if (file.name.toLowerCase().endsWith('.svg') || mimeType === 'image/svg+xml') {
-        mimeType = 'image/svg+xml';
+        // For SVG files, use image/png as Gemini doesn't support SVG directly
+        mimeType = 'image/png';
     }
 
     // Default to image/jpeg if no type detected
-    if (!mimeType) {
+    if (!mimeType || mimeType === 'application/octet-stream') {
         mimeType = 'image/jpeg';
     }
 
@@ -97,9 +98,9 @@ Provide a comprehensive description in 2-3 sentences.`;
             confidence: 95,
             source: 'gemini',
         };
-    } catch (error: any) {
+    } catch (error: unknown) {
         // Handle specific Gemini API errors
-        const errorMessage = error?.message || String(error);
+        const errorMessage = error instanceof Error ? error.message : String(error);
 
         if (errorMessage.includes('Forbidden') || errorMessage.includes('403')) {
             throw new Error('Gemini API access forbidden. Please check your API key permissions or try again later.');
@@ -214,9 +215,9 @@ Return JSON with: "title", "keywords", "category_id" (number).`;
             keywords: parsed.keywords || '',
             category_id: parsed.category_id || 1,
         };
-    } catch (error: any) {
+    } catch (error: unknown) {
         // Handle specific Gemini API errors
-        const errorMessage = error?.message || String(error);
+        const errorMessage = error instanceof Error ? error.message : String(error);
 
         if (errorMessage.includes('Forbidden') || errorMessage.includes('403')) {
             if (isVideo) {

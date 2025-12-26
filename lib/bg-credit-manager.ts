@@ -1,6 +1,17 @@
 import { prisma } from './prisma';
 import { CreditTransactionType } from '@prisma/client';
 
+interface UserBgCredits {
+  bgRemovalCredits: number;
+  bgCreditsExpiresAt: Date | null;
+}
+
+interface UserWithBgCredits {
+  id: string;
+  bgRemovalCredits: number;
+  bgCreditsExpiresAt: Date | null;
+}
+
 /**
  * Custom error classes for BG removal credits
  */
@@ -86,8 +97,8 @@ export class BgCreditManager {
 
       const user = await prisma.user.findUnique({
         where: { id: this.userId },
-        select: { bgRemovalCredits: true, bgCreditsExpiresAt: true } as any
-      }) as any;
+        select: { bgRemovalCredits: true, bgCreditsExpiresAt: true }
+      }) as UserBgCredits | null;
 
       if (!user) {
         throw new UserNotFoundError(this.userId);
@@ -113,8 +124,8 @@ export class BgCreditManager {
     try {
       const user = await prisma.user.findUnique({
         where: { id: this.userId },
-        select: { bgRemovalCredits: true, bgCreditsExpiresAt: true } as any
-      }) as any;
+        select: { bgRemovalCredits: true, bgCreditsExpiresAt: true }
+      }) as UserBgCredits | null;
 
       if (!user) {
         return;
@@ -131,7 +142,7 @@ export class BgCreditManager {
               data: {
                 bgRemovalCredits: 0,
                 bgCreditsExpiresAt: null
-              } as any
+              }
             });
 
             // Create transaction record for expired credits
@@ -166,8 +177,8 @@ export class BgCreditManager {
 
     const user = await prisma.user.findUnique({
       where: { id: this.userId },
-      select: { bgCreditsExpiresAt: true } as any
-    }) as any;
+      select: { bgCreditsExpiresAt: true }
+    }) as { bgCreditsExpiresAt: Date | null } | null;
 
     this.expiresAt = user?.bgCreditsExpiresAt ?? null;
     return this.expiresAt ?? null;
@@ -216,8 +227,8 @@ export class BgCreditManager {
       const result = await prisma.$transaction(async (tx) => {
         const user = await tx.user.findUnique({
           where: { id: this.userId },
-          select: { bgRemovalCredits: true } as any
-        }) as any;
+          select: { bgRemovalCredits: true }
+        }) as { bgRemovalCredits: number } | null;
 
         if (!user) {
           throw new UserNotFoundError(this.userId);
@@ -229,7 +240,7 @@ export class BgCreditManager {
 
         const updatedUser = await tx.user.update({
           where: { id: this.userId },
-          data: { bgRemovalCredits: user.bgRemovalCredits - amount } as any
+          data: { bgRemovalCredits: user.bgRemovalCredits - amount }
         });
 
         const transaction = await tx.creditTransaction.create({
@@ -290,7 +301,7 @@ export class BgCreditManager {
       const result = await prisma.$transaction(async (tx) => {
         const user = await tx.user.findUnique({
           where: { id: this.userId },
-          select: { bgRemovalCredits: true, bgCreditsExpiresAt: true } as any
+          select: { bgRemovalCredits: true, bgCreditsExpiresAt: true }
         }) as { bgRemovalCredits: number; bgCreditsExpiresAt: Date | null } | null;
 
         if (!user) {
@@ -303,8 +314,8 @@ export class BgCreditManager {
           data: {
             bgRemovalCredits: (user.bgRemovalCredits || 0) + amount,
             bgCreditsExpiresAt: expirationDate // Always update expiration on credit purchase
-          } as any
-        }) as any;
+          }
+        }) as UserWithBgCredits;
 
 
         const transaction = await tx.creditTransaction.create({

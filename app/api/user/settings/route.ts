@@ -19,7 +19,7 @@ export async function GET() {
         }
 
         // Use type assertion since aiProvider was just added to schema
-        return NextResponse.json({ aiProvider: (user as any).aiProvider || 'openai' });
+        return NextResponse.json({ aiProvider: (user as { aiProvider?: string }).aiProvider || 'openai' });
     } catch (error) {
         console.error('Error fetching user settings:', error);
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

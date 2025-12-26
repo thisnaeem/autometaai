@@ -74,6 +74,7 @@ const SelectTrigger = React.forwardRef<HTMLButtonElement, SelectTriggerProps>(
         type="button"
         role="combobox"
         aria-expanded={open}
+        aria-controls="select-content"
         disabled={disabled}
         className={cn(
           'flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
@@ -145,7 +146,7 @@ const SelectContent: React.FC<SelectContentProps> = ({ children, className }) =>
   // Clone children and pass value to SelectValue
   const childrenWithValue = React.Children.map(children, (child) => {
     if (React.isValidElement(child)) {
-      return React.cloneElement(child as React.ReactElement<any>, { 'data-select-value': value });
+      return React.cloneElement(child as React.ReactElement<{ 'data-select-value'?: string }>, { 'data-select-value': value });
     }
     return child;
   });

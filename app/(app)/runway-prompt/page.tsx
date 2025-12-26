@@ -19,9 +19,11 @@ export default function RunwayPromptPage() {
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [results, setResults] = useState<PromptResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [shouldStop, setShouldStop] = useState(false);
+  const [processingImages, setProcessingImages] = useState<Set<string>>(new Set());
   const [, setProgress] = useState(0);
-  const [currentFile, setCurrentFile] = useState(0);
-  const [totalFiles, setTotalFiles] = useState(0);
+  const [currentFile, setCurrentFile] = useState(0); // eslint-disable-line @typescript-eslint/no-unused-vars
+  const [totalFiles, setTotalFiles] = useState(0); // eslint-disable-line @typescript-eslint/no-unused-vars
   const [error, setError] = useState<string>('');
 
 
@@ -48,111 +50,142 @@ export default function RunwayPromptPage() {
   });
 
   const removeFile = (index: number) => {
+    const fileToRemove = selectedFiles[index];
+    
     setSelectedFiles(prev => prev.filter((_, i) => i !== index));
     setPreviewUrls(prev => prev.filter((_, i) => i !== index));
+    
+    // Remove from results if it exists
+    setResults(prev => prev.filter(result => result.filename !== fileToRemove.name));
+    
+    // Remove from processing set if it's being processed
+    setProcessingImages(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(fileToRemove.name);
+      return newSet;
+    });
   };
 
   const handleGeneratePrompts = async () => {
     if (selectedFiles.length === 0) return;
 
     setIsProcessing(true);
+    setShouldStop(false);
     setError('');
     setResults([]);
+    setProcessingImages(new Set());
     setProgress(0);
     setCurrentFile(0);
-    setTotalFiles(0);
+    setTotalFiles(selectedFiles.length);
 
     try {
-      if (selectedFiles.length > 1) {
-        // Process images one by one to show real-time progress
-        setTotalFiles(selectedFiles.length);
-        const newResults: PromptResult[] = [];
+      // Process images in batches of 10
+      const batchSize = 10;
+      const allResults: PromptResult[] = [];
+      
+      for (let i = 0; i < selectedFiles.length; i += batchSize) {
+        // Check if user wants to stop
+        if (shouldStop) {
+          break;
+        }
 
-        for (let i = 0; i < selectedFiles.length; i++) {
-          setCurrentFile(i + 1);
-          setProgress(Math.round(((i + 1) / selectedFiles.length) * 100));
+        const batch = selectedFiles.slice(i, i + batchSize);
+        setCurrentFile(i + 1);
+        
+        // Mark current batch images as processing
+        const currentBatchNames = new Set(batch.map(file => file.name));
+        setProcessingImages(currentBatchNames);
+        
+        // Create FormData for batch processing
+        const formData = new FormData();
+        batch.forEach((file, index) => {
+          formData.append(`image_${index}`, file);
+        });
 
-          const file = selectedFiles[i];
-          const formData = new FormData();
-          formData.append('image', file);
-          formData.append('skipHistory', 'true');
+        try {
+          const response = await fetch('/api/runway-prompt/batch', {
+            method: 'POST',
+            body: formData,
+          });
 
-          try {
-            const response = await fetch('/api/runway-prompt', {
-              method: 'POST',
-              body: formData,
-            });
-
-            if (!response.ok) {
-              const errorData = await response.json();
-              throw new Error(errorData.error || 'Failed to generate prompt');
-            }
-
-            const data = await response.json();
-            newResults.push({
-              filename: file.name,
-              low: data.low,
-              medium: data.medium,
-              high: data.high,
-            });
-          } catch (err: unknown) {
-            newResults.push({
-              filename: file.name,
-              low: '',
-              medium: '',
-              high: '',
-              error: err instanceof Error ? err.message : 'Failed to process image',
-            });
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to generate prompts');
           }
 
-          setResults([...newResults]);
-        }
+          const data = await response.json();
+          
+          interface ApiResult {
+            filename: string;
+            low?: string;
+            medium?: string;
+            high?: string;
+            error?: string;
+          }
+          
+          // Convert batch results to our format
+          const batchResults: PromptResult[] = data.results.map((result: ApiResult) => ({
+            filename: result.filename,
+            low: result.low || '',
+            medium: result.medium || '',
+            high: result.high || '',
+            error: result.error
+          }));
 
-        // After all processed, create batch file in background (don't wait)
-        fetch('/api/runway-prompt/bulk', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ results: newResults }),
-        }).catch(err => {
-          console.error('Failed to create batch file:', err);
-        });
-      } else {
-        // Use single API for one image
-        const file = selectedFiles[0];
-        const formData = new FormData();
-        formData.append('image', file);
-
-        const response = await fetch('/api/runway-prompt', {
-          method: 'POST',
-          body: formData,
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || 'Failed to generate prompt');
-        }
-
-        const data = await response.json();
-        setResults([
-          {
+          allResults.push(...batchResults);
+          setResults([...allResults]);
+          
+          // Update progress
+          const processedCount = Math.min(i + batchSize, selectedFiles.length);
+          setProgress(Math.round((processedCount / selectedFiles.length) * 100));
+          
+        } catch (err: unknown) {
+          // If batch fails, add error results for all files in the batch
+          const errorResults: PromptResult[] = batch.map(file => ({
             filename: file.name,
-            low: data.low,
-            medium: data.medium,
-            high: data.high,
-          },
-        ]);
-        setProgress(100);
+            low: '',
+            medium: '',
+            high: '',
+            error: err instanceof Error ? err.message : 'Failed to process batch',
+          }));
+          
+          allResults.push(...errorResults);
+          setResults([...allResults]);
+        }
+        
+        // Clear processing status for this batch
+        setProcessingImages(new Set());
       }
+
+      // Create final batch history record only if we have results
+      if (allResults.length > 0) {
+        try {
+          await fetch('/api/runway-prompt/bulk', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ results: allResults }),
+          });
+        } catch (err) {
+          console.error('Failed to create batch file:', err);
+        }
+      }
+
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'An error occurred while processing images');
     } finally {
       setIsProcessing(false);
+      setShouldStop(false);
+      setProcessingImages(new Set());
       setCurrentFile(0);
       setTotalFiles(0);
       setProgress(0);
     }
+  };
+
+  const handleStopProcessing = () => {
+    setShouldStop(true);
   };
 
   const copyToClipboard = (text: string) => {
@@ -239,23 +272,66 @@ export default function RunwayPromptPage() {
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-4 gap-3">
-                    {previewUrls.map((url, index) => (
-                      <div key={index} className="relative group">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={url}
-                          alt={`Preview of ${selectedFiles[index].name}`}
-                          className="w-full h-20 object-cover rounded-lg border border-slate-200"
-                        />
-                        <button
-                          onClick={() => removeFile(index)}
-                          className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ))}
+                  <div className="max-h-80 overflow-y-auto border border-slate-200 rounded-lg p-3 bg-slate-50">
+                    <div className="grid grid-cols-4 gap-3">
+                      {previewUrls.map((url, index) => {
+                        const file = selectedFiles[index];
+                        const isProcessingThisImage = processingImages.has(file.name);
+                        const hasResult = results.find(r => r.filename === file.name);
+                        const hasError = hasResult?.error;
+                        
+                        return (
+                          <div key={index} className="relative group">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={url}
+                              alt={`Preview of ${file.name}`}
+                              className={`w-full h-20 object-cover rounded-lg border transition-all ${
+                                hasError 
+                                  ? 'border-red-300 opacity-60' 
+                                  : hasResult 
+                                    ? 'border-green-300' 
+                                    : 'border-slate-200'
+                              }`}
+                            />
+                            
+                            {/* Processing Loader Overlay */}
+                            {isProcessingThisImage && (
+                              <div className="absolute inset-0 rounded-lg flex items-center justify-center">
+                                <div className="w-8 h-8 border-3 border-white border-t-transparent rounded-full animate-spin shadow-lg"></div>
+                              </div>
+                            )}
+                            
+                            {/* Success Indicator */}
+                            {hasResult && !hasError && (
+                              <div className="absolute top-1 right-1 w-4 h-4 bg-green-500 rounded-full flex items-center justify-center">
+                                <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                </svg>
+                              </div>
+                            )}
+                            
+                            {/* Error Indicator */}
+                            {hasError && (
+                              <div className="absolute top-1 right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center">
+                                <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                                </svg>
+                              </div>
+                            )}
+                            
+                            {/* Remove Button */}
+                            <button
+                              onClick={() => removeFile(index)}
+                              className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-10"
+                              disabled={isProcessingThisImage}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               )}
@@ -266,37 +342,50 @@ export default function RunwayPromptPage() {
                 </div>
               )}
 
-              <Button
-                variant="primary"
-                size="lg"
-                onClick={handleGeneratePrompts}
-                disabled={isProcessing || selectedFiles.length === 0}
-                className="w-full mt-6 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700"
-              >
-                {isProcessing ? (
-                  <>
-                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                    {totalFiles > 0 ? `Processing ${currentFile}/${totalFiles}` : 'Processing...'}
-                  </>
-                ) : (
-                  <>
-                    <HugeiconsIcon icon={Image02Icon} size={20} className="mr-2" />
-                    Generate Runway Prompts
-                  </>
-                )}
-              </Button>
-
-              {results.length > 0 && (
+              <div className="mt-6 space-y-3">
                 <Button
-                  variant="outline"
+                  variant="primary"
                   size="lg"
-                  onClick={exportToCSV}
-                  className="w-full mt-3 border-slate-300 text-slate-700 hover:bg-slate-50"
+                  onClick={handleGeneratePrompts}
+                  disabled={isProcessing || selectedFiles.length === 0}
+                  className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700"
                 >
-                  <HugeiconsIcon icon={Download01Icon} size={20} className="mr-2" />
-                  Export to CSV
+                  {isProcessing ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      <HugeiconsIcon icon={Image02Icon} size={20} className="mr-2" />
+                      Generate Runway Prompts
+                    </>
+                  )}
                 </Button>
-              )}
+
+                {isProcessing && (
+                  <Button
+                    variant="outline"
+                    size="lg"
+                    onClick={handleStopProcessing}
+                    className="w-full border-red-300 text-red-700 hover:bg-red-50"
+                  >
+                    Stop Processing
+                  </Button>
+                )}
+
+                {results.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="lg"
+                    onClick={exportToCSV}
+                    className="w-full border-slate-300 text-slate-700 hover:bg-slate-50"
+                  >
+                    <HugeiconsIcon icon={Download01Icon} size={20} className="mr-2" />
+                    Export to CSV
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
 

@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
           : 'credits';
 
         // Calculate expiration date for BG removal credits (30 days from now)
-        const updateData: any = {
+        const updateData: Record<string, unknown> = {
           [creditField]: {
             increment: paymentRequest.creditsRequested
           }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth-server';
 import { getApiKey } from '@/lib/getApiKey';
-import { BgCreditManager, InsufficientBgCreditsError } from '@/lib/bg-credit-manager';
+import { BgCreditManager } from '@/lib/bg-credit-manager';
 import { prisma } from '@/lib/prisma';
 
 export async function POST(request: NextRequest) {

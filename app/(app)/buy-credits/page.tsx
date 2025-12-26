@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Check, CreditCard, Shield, Zap, Info } from 'lucide-react';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { ArrowRight01Icon, PackageIcon, FlashIcon, CrownIcon, PaintBoardIcon } from '@hugeicons/core-free-icons';
+import { ArrowRight01Icon, PackageIcon, FlashIcon, PaintBoardIcon } from '@hugeicons/core-free-icons';
 import { cn } from '@/lib/utils';
 
 type LocationType = 'pakistan' | 'international';

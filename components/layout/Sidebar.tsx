@@ -7,7 +7,14 @@ import { useSession, signOut } from '@/lib/auth-client';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/Button';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { TextIcon, Clock01Icon, ShoppingBasket01Icon, Logout01Icon, Image02Icon, VideoIcon, FileEditIcon, Invoice01Icon, FlashIcon, PaintBoardIcon } from '@hugeicons/core-free-icons';
+import { TextIcon, ShoppingBasket01Icon, Logout01Icon, Image02Icon, VideoIcon, FileEditIcon, Invoice01Icon, FlashIcon, PaintBoardIcon } from '@hugeicons/core-free-icons';
+
+interface UserWithCredits {
+  credits?: number;
+  bgRemovalCredits?: number;
+  bgCreditsExpiresAt?: string;
+  [key: string]: unknown;
+}
 
 const Sidebar = () => {
   const pathname = usePathname();
@@ -33,11 +40,6 @@ const Sidebar = () => {
       name: 'Metadata Gen',
       href: '/metadata-gen',
       icon: <HugeiconsIcon icon={FileEditIcon} size={20} strokeWidth={2} />
-    },
-    {
-      name: 'History',
-      href: '/history',
-      icon: <HugeiconsIcon icon={Clock01Icon} size={20} strokeWidth={2} />
     },
     {
       name: 'Buy Credits',
@@ -107,28 +109,28 @@ const Sidebar = () => {
             <div className="mt-2 flex flex-col gap-1">
               <div className="flex items-center gap-2">
                 {/* General Credits */}
-                {(session?.user as any)?.credits !== undefined && (
+                {(session?.user as UserWithCredits)?.credits !== undefined && (
                   <div className="flex items-center gap-1 px-2 py-1 bg-blue-50 rounded-lg border border-blue-200">
                     <HugeiconsIcon icon={FlashIcon} size={14} className="text-blue-600" />
                     <p className="text-xs text-blue-700 font-bold">
-                      {(session?.user as any).credits}
+                      {(session?.user as UserWithCredits).credits}
                     </p>
                   </div>
                 )}
                 {/* BG Removal Credits */}
-                {(session?.user as any)?.bgRemovalCredits !== undefined && (
+                {(session?.user as UserWithCredits)?.bgRemovalCredits !== undefined && (
                   <div className="flex items-center gap-1 px-2 py-1 bg-purple-50 rounded-lg border border-purple-200">
                     <HugeiconsIcon icon={PaintBoardIcon} size={14} className="text-purple-600" />
                     <p className="text-xs text-purple-700 font-bold">
-                      {(session?.user as any).bgRemovalCredits}
+                      {(session?.user as UserWithCredits).bgRemovalCredits}
                     </p>
                   </div>
                 )}
               </div>
               {/* Expiration shown separately below */}
-              {(session?.user as any)?.bgCreditsExpiresAt && (
+              {(session?.user as UserWithCredits)?.bgCreditsExpiresAt && (
                 <p className="text-[10px] text-slate-500">
-                  BG Exp: {new Date((session?.user as any).bgCreditsExpiresAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  BG Exp: {new Date((session?.user as UserWithCredits).bgCreditsExpiresAt!).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                 </p>
               )}
             </div>

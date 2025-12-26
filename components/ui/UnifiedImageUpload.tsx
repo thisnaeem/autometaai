@@ -29,21 +29,6 @@ interface ProcessResult {
   remainingCredits?: number;
 }
 
-interface ProgressUpdate {
-  type: 'progress' | 'result' | 'complete' | 'error';
-  index?: number;
-  total?: number;
-  result?: ProcessResult;
-  summary?: {
-    total: number;
-    successful: number;
-    failed: number;
-    creditsUsed: number;
-    remainingCredits: number;
-  };
-  error?: string;
-}
-
 interface FileWithPreview extends File {
   preview: string;
   id: string;
@@ -332,111 +317,113 @@ const UnifiedImageUpload: React.FC<UnifiedImageUploadProps> = ({
     progressManagerRef.current.setTotal(filesToProcess.length);
 
     try {
-      const formData = new FormData();
-      filesToProcess.forEach((file) => {
-        formData.append('images', file);
-      });
-      formData.append('aiProvider', aiProvider);
+      // Process images in batches of 10
+      const batchSize = 10;
+      const allResults: ProcessResult[] = [];
+      
+      for (let i = 0; i < filesToProcess.length; i += batchSize) {
+        const batch = filesToProcess.slice(i, i + batchSize);
+        
+        // Create FormData for batch processing
+        const formData = new FormData();
+        batch.forEach((file, index) => {
+          formData.append(`image_${index}`, file);
+        });
+        formData.append('aiProvider', aiProvider);
 
-      // Use the correct bulk processing endpoint that returns SSE stream
-      const response = await fetch('/api/describe/bulk', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to process images');
-      }
-
-      // Handle the response as a stream
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-
-      if (!reader) {
-        throw new Error('Failed to get response stream');
-      }
-
-      // Process the stream
-      const processStream = async () => {
-        let buffer = '';
         try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
+          const response = await fetch('/api/describe/batch', {
+            method: 'POST',
+            body: formData,
+          });
 
-            buffer += decoder.decode(value, { stream: true });
-
-            // Split by double newline which separates SSE messages
-            const messages = buffer.split('\n\n');
-            // Keep the last potentially incomplete message in the buffer
-            buffer = messages.pop() || '';
-
-            for (const message of messages) {
-              const trimmedMessage = message.trim();
-              if (trimmedMessage.startsWith('data: ')) {
-                try {
-                  const data: ProgressUpdate = JSON.parse(trimmedMessage.slice(6));
-
-                  if (data.type === 'progress') {
-                    progressManagerRef.current?.updateProgress(data.index || 0);
-                  } else if (data.type === 'result' && data.result) {
-                    const result = data.result;
-                    fileManagerRef.current?.updateFileStatus(
-                      result.index,
-                      result.success ? 'completed' : 'error',
-                      result
-                    );
-                    progressManagerRef.current?.updateProgress(
-                      result.index + 1,
-                      result.success
-                    );
-
-                    // Update results in real-time
-                    const currentResults = fileManagerRef.current?.exportResults() || [];
-                    setResults(currentResults);
-
-                    if (result.remainingCredits !== undefined && onCreditsUpdate) {
-                      onCreditsUpdate(result.remainingCredits);
-                    }
-                  } else if (data.type === 'complete') {
-                    setIsProcessing(false);
-                    if (data.summary && onCreditsUpdate) {
-                      onCreditsUpdate(data.summary.remainingCredits);
-                    }
-                    const finalResults = fileManagerRef.current?.exportResults() || [];
-                    setResults(finalResults);
-                    if (onProcessingComplete) {
-                      onProcessingComplete(finalResults);
-                    }
-                  } else if (data.type === 'error') {
-                    setErrors(prev => [...prev, data.error || 'Unknown error occurred']);
-                    setIsProcessing(false);
-                  }
-                } catch (parseError) {
-                  console.warn('Failed to parse SSE message:', parseError, trimmedMessage);
-                }
-              }
-            }
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to process batch');
           }
-        } catch (error) {
-          console.error('Stream processing error:', error);
-          setIsProcessing(false);
-          setErrors(prev => [...prev, 'Connection lost during processing.']);
-        } finally {
-          reader.releaseLock();
-        }
-      };
 
-      // Start processing the stream
-      processStream();
+          const data = await response.json();
+          
+          interface ApiResult {
+            success: boolean;
+            filename: string;
+            description?: string;
+            confidence?: number;
+            source?: string;
+            error?: string;
+            url?: string;
+            imageData?: string;
+          }
+
+          // Convert batch results to our format
+          const batchResults: ProcessResult[] = data.results.map((result: ApiResult, index: number) => ({
+            success: result.success,
+            filename: result.filename,
+            description: result.description || '',
+            confidence: result.confidence || 0,
+            source: result.source || aiProvider,
+            error: result.error,
+            index: i + index,
+            remainingCredits: data.creditsRemaining
+          }));
+
+          // Update file statuses
+          batchResults.forEach((result, batchIndex) => {
+            const globalIndex = i + batchIndex;
+            fileManagerRef.current?.updateFileStatus(
+              globalIndex,
+              result.success ? 'completed' : 'error',
+              result
+            );
+          });
+
+          allResults.push(...batchResults);
+          setResults(allResults);
+          
+          // Update progress
+          const processedCount = Math.min(i + batchSize, filesToProcess.length);
+          progressManagerRef.current?.updateProgress(processedCount);
+          
+          // Update credits
+          if (data.creditsRemaining !== undefined && onCreditsUpdate) {
+            onCreditsUpdate(data.creditsRemaining);
+          }
+          
+        } catch (err: unknown) {
+          // If batch fails, add error results for all files in the batch
+          const errorResults: ProcessResult[] = batch.map((file, batchIndex) => ({
+            success: false,
+            filename: file.name,
+            description: '',
+            confidence: 0,
+            source: aiProvider,
+            error: err instanceof Error ? err.message : 'Failed to process batch',
+            index: i + batchIndex
+          }));
+          
+          // Update file statuses for failed batch
+          errorResults.forEach((result, batchIndex) => {
+            const globalIndex = i + batchIndex;
+            fileManagerRef.current?.updateFileStatus(globalIndex, 'error', result);
+          });
+          
+          allResults.push(...errorResults);
+          setResults(allResults);
+        }
+      }
+
+      // Final completion
+      setIsProcessing(false);
+      if (onProcessingComplete) {
+        onProcessingComplete(allResults);
+      }
 
     } catch (error) {
       console.error('Error processing images:', error);
       setErrors(prev => [...prev, error instanceof Error ? error.message : 'Unknown error occurred']);
       setIsProcessing(false);
     }
-  }, [onCreditsUpdate, onProcessingComplete, userCredits]);
+  }, [onCreditsUpdate, onProcessingComplete, userCredits, aiProvider]);
 
   const downloadResults = () => {
     if (!fileManagerRef.current) return;

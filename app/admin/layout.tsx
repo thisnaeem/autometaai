@@ -5,6 +5,11 @@ import { useRouter } from "next/navigation"
 import { useEffect } from "react"
 import AdminSidebar from "@/components/layout/AdminSidebar"
 
+interface UserWithRole {
+  role?: string;
+  [key: string]: unknown;
+}
+
 export default function AdminLayout({
   children,
 }: {
@@ -21,7 +26,7 @@ export default function AdminLayout({
       return
     }
 
-    if ((session.user as any).role !== "ADMIN") {
+    if ((session.user as UserWithRole).role !== "ADMIN") {
       router.push("/describe")
       return
     }
@@ -35,7 +40,7 @@ export default function AdminLayout({
     )
   }
 
-  if (!session || (session.user as any).role !== "ADMIN") {
+  if (!session || (session.user as UserWithRole).role !== "ADMIN") {
     return null
   }
 

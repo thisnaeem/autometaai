@@ -74,7 +74,14 @@ export default function BgRemoverPage() {
         updateBgCredits(data.remainingBgCredits);
       }
 
-      const processed: ProcessedImage[] = data.results.map((result: any) => ({
+      interface ApiResult {
+        filename: string;
+        success: boolean;
+        imageData?: string;
+        error?: string;
+      }
+
+      const processed: ProcessedImage[] = data.results.map((result: ApiResult) => ({
         filename: result.filename,
         url: result.success ? `data:image/png;base64,${result.imageData}` : '',
         success: result.success,
