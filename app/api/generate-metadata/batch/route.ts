@@ -41,12 +41,14 @@ export async function POST(request: NextRequest) {
     }
 
     const formData = await request.formData();
-    const imageFiles: File[] = [];
-    
-    // Extract all image files from formData
+    const imageFiles: { file: File; originalName: string }[] = [];
+
+    // Extract all image files and their original names from formData
     for (const [key, value] of formData.entries()) {
       if (key.startsWith('image_') && value instanceof File) {
-        imageFiles.push(value);
+        const index = key.replace('image_', '');
+        const originalName = (formData.get(`originalName_${index}`) as string) || value.name;
+        imageFiles.push({ file: value, originalName });
       }
     }
 
@@ -87,15 +89,15 @@ export async function POST(request: NextRequest) {
     const categories = `1. Animals, 2. Buildings and Architecture, 3. Business, 4. Drinks, 5. The Environment, 6. States of Mind, 7. Food, 8. Graphic Resources, 9. Hobbies and Leisure, 10. Industry, 11. Landscape, 12. Lifestyle, 13. People, 14. Plants and Flowers, 15. Culture and Religion, 16. Science, 17. Social Issues, 18. Sports, 19. Technology, 20. Transport, 21. Travel`;
 
     // Process images in parallel (up to 5 at a time to avoid overwhelming the API)
-    const processInBatches = async (files: File[], batchSize: number = 5) => {
+    const processInBatches = async (files: { file: File; originalName: string }[], batchSize: number = 5) => {
       for (let i = 0; i < files.length; i += batchSize) {
         const batch = files.slice(i, i + batchSize);
-        const promises = batch.map(async (file) => {
+        const promises = batch.map(async ({ file, originalName }) => {
           try {
             // Validate file
             if (!file) {
               return {
-                filename: 'Unknown',
+                filename: originalName || 'Unknown',
                 title: '',
                 keywords: '',
                 category: '',
@@ -108,7 +110,7 @@ export async function POST(request: NextRequest) {
             const maxSize = 150 * 1024 * 1024; // 150MB
             if (file.size > maxSize) {
               return {
-                filename: file.name,
+                filename: originalName,
                 title: '',
                 keywords: '',
                 category: '',
@@ -118,8 +120,8 @@ export async function POST(request: NextRequest) {
             }
 
             // Detect file types
-            const isVideo = file.type.startsWith('video/');
-            const isSvg = file.name.toLowerCase().endsWith('.svg') || file.type === 'image/svg+xml';
+            const isVideo = file.type.startsWith('video/') || !!originalName.match(/\\.(mp4|mov|avi|webm)$/i);
+            const isSvg = originalName.toLowerCase().endsWith('.svg') || file.type === 'image/svg+xml';
 
             // Use Gemini for metadata generation
             const geminiResult = await generateMetadataWithGemini(file, {
@@ -157,16 +159,16 @@ export async function POST(request: NextRequest) {
             successfulProcessing++;
 
             return {
-              filename: file.name,
+              filename: originalName,
               title,
               keywords,
               category: categoryString,
               success: true
             };
           } catch (error) {
-            console.error(`Error processing ${file.name}:`, error);
+            console.error(`Error processing ${originalName}:`, error);
             return {
-              filename: file.name,
+              filename: originalName,
               title: '',
               keywords: '',
               category: '',
@@ -187,7 +189,7 @@ export async function POST(request: NextRequest) {
     // Deduct credits only for successfully processed images
     if (successfulProcessing > 0) {
       const creditResult = await deductCredits(user.id, successfulProcessing);
-      
+
       if (!creditResult.success) {
         return NextResponse.json(
           { error: creditResult.error || 'Failed to deduct credits' },

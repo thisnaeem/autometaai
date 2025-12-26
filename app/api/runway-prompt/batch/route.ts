@@ -41,12 +41,14 @@ export async function POST(request: NextRequest) {
     }
 
     const formData = await request.formData();
-    const imageFiles: File[] = [];
-    
-    // Extract all image files from formData
+    const imageFiles: { file: File; originalName: string }[] = [];
+
+    // Extract all image files and their original names from formData
     for (const [key, value] of formData.entries()) {
       if (key.startsWith('image_') && value instanceof File) {
-        imageFiles.push(value);
+        const index = key.replace('image_', '');
+        const originalName = (formData.get(`originalName_${index}`) as string) || value.name;
+        imageFiles.push({ file: value, originalName });
       }
     }
 
@@ -97,16 +99,16 @@ export async function POST(request: NextRequest) {
     };
 
     // Process images in parallel (up to 5 at a time to avoid overwhelming the API)
-    const processInBatches = async (files: File[], batchSize: number = 5) => {
+    const processInBatches = async (files: { file: File; originalName: string }[], batchSize: number = 5) => {
       for (let i = 0; i < files.length; i += batchSize) {
         const batch = files.slice(i, i + batchSize);
-        const promises = batch.map(async (file) => {
+        const promises = batch.map(async ({ file, originalName }) => {
           try {
             // Check if file is SVG and handle appropriately
-            if (file.name.toLowerCase().endsWith('.svg') || file.type === 'image/svg+xml') {
+            if (originalName.toLowerCase().endsWith('.svg') || file.type === 'image/svg+xml') {
               // For now, skip SVG files or handle them differently
               return {
-                filename: file.name,
+                filename: originalName,
                 low: '',
                 medium: '',
                 high: '',
@@ -116,7 +118,7 @@ export async function POST(request: NextRequest) {
             }
 
             const geminiResult = await generateRunwayPromptsWithGemini(file);
-            
+
             const lowPrompt = buildPrompt('low', geminiResult.low || '');
             const mediumPrompt = buildPrompt('medium', geminiResult.medium || '');
             const highPrompt = buildPrompt('high', geminiResult.high || '');
@@ -124,16 +126,16 @@ export async function POST(request: NextRequest) {
             successfulProcessing++;
 
             return {
-              filename: file.name,
+              filename: originalName,
               low: lowPrompt,
               medium: mediumPrompt,
               high: highPrompt,
               success: true
             };
           } catch (error) {
-            console.error(`Error processing ${file.name}:`, error);
+            console.error(`Error processing ${originalName}:`, error);
             return {
-              filename: file.name,
+              filename: originalName,
               low: '',
               medium: '',
               high: '',
@@ -154,7 +156,7 @@ export async function POST(request: NextRequest) {
     // Deduct credits only for successfully processed images
     if (successfulProcessing > 0) {
       const creditResult = await deductCredits(user.id, successfulProcessing);
-      
+
       if (!creditResult.success) {
         return NextResponse.json(
           { error: creditResult.error || 'Failed to deduct credits' },
@@ -175,8 +177,8 @@ export async function POST(request: NextRequest) {
               mediumMotion: result.medium,
               highMotion: result.high,
               description: null,
-              fileSize: imagesToProcess.find(f => f.name === result.filename)?.size || 0,
-              mimeType: imagesToProcess.find(f => f.name === result.filename)?.type || 'image/jpeg',
+              fileSize: imagesToProcess.find(f => f.originalName === result.filename)?.file.size || 0,
+              mimeType: imagesToProcess.find(f => f.originalName === result.filename)?.file.type || 'image/jpeg',
             })),
           });
         }

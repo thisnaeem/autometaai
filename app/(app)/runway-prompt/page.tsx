@@ -14,8 +14,13 @@ interface PromptResult {
   error?: string;
 }
 
+interface FileWithPreview extends File {
+  preview?: string;
+  originalName?: string;
+}
+
 export default function RunwayPromptPage() {
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [selectedFiles, setSelectedFiles] = useState<FileWithPreview[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [results, setResults] = useState<PromptResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -26,20 +31,169 @@ export default function RunwayPromptPage() {
   const [totalFiles, setTotalFiles] = useState(0); // eslint-disable-line @typescript-eslint/no-unused-vars
   const [error, setError] = useState<string>('');
 
+  // Convert data URL to File object
+  const dataURLtoFile = (dataurl: string, filename: string): File => {
+    const arr = dataurl.split(',');
+    const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new File([u8arr], filename, { type: mime });
+  };
 
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    setSelectedFiles(prev => [...prev, ...acceptedFiles]);
+  // Compress image to target size (20-30KB) for AI processing
+  const compressImage = useCallback((file: File): Promise<{ compressedFile: File; preview: string }> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
 
-    acceptedFiles.forEach(file => {
+      if (!ctx) {
+        reject(new Error('Failed to get canvas context'));
+        return;
+      }
+
+      img.onload = () => {
+        // Calculate dimensions to maintain aspect ratio
+        const maxDimension = 800; // Start with reasonable max dimension
+        let { width, height } = img;
+
+        if (width > height) {
+          if (width > maxDimension) {
+            height = (height * maxDimension) / width;
+            width = maxDimension;
+          }
+        } else {
+          if (height > maxDimension) {
+            width = (width * maxDimension) / height;
+            height = maxDimension;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        // Draw and compress
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // Function to try different quality levels
+        const tryCompress = (quality: number): string => {
+          return canvas.toDataURL('image/jpeg', quality);
+        };
+
+        // Binary search for optimal quality to achieve 20-30KB
+        let minQuality = 0.1;
+        let maxQuality = 0.9;
+        let bestDataUrl = '';
+        let bestSize = 0;
+        const targetMinSize = 15 * 1024; // 15KB minimum
+        const targetMaxSize = 35 * 1024; // 35KB maximum
+
+        // Try different quality levels
+        for (let i = 0; i < 10; i++) {
+          const currentQuality = (minQuality + maxQuality) / 2;
+          const dataUrl = tryCompress(currentQuality);
+          const base64Data = dataUrl.split(',')[1];
+          const sizeInBytes = (base64Data.length * 3) / 4;
+
+          if (sizeInBytes >= targetMinSize && sizeInBytes <= targetMaxSize) {
+            bestDataUrl = dataUrl;
+            bestSize = sizeInBytes;
+            break;
+          } else if (sizeInBytes > targetMaxSize) {
+            maxQuality = currentQuality;
+          } else {
+            minQuality = currentQuality;
+          }
+
+          // Keep track of the best attempt
+          if (!bestDataUrl || Math.abs(sizeInBytes - 25 * 1024) < Math.abs(bestSize - 25 * 1024)) {
+            bestDataUrl = dataUrl;
+            bestSize = sizeInBytes;
+          }
+        }
+
+        // If still too large, reduce dimensions
+        if (bestSize > targetMaxSize) {
+          const scaleFactor = Math.sqrt(targetMaxSize / bestSize);
+          canvas.width = Math.floor(width * scaleFactor);
+          canvas.height = Math.floor(height * scaleFactor);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          bestDataUrl = tryCompress(0.8);
+        }
+
+        // Create compressed file
+        const compressedFileName = file.name.replace(/\.[^/.]+$/, '') + '_compressed.jpg';
+        const compressedFile = dataURLtoFile(bestDataUrl, compressedFileName);
+
+        resolve({
+          compressedFile,
+          preview: bestDataUrl
+        });
+      };
+
+      img.onerror = () => {
+        reject(new Error('Failed to load image for compression'));
+      };
+
+      // Load the image
       const reader = new FileReader();
-      reader.onload = () => {
-        setPreviewUrls(prev => [...prev, reader.result as string]);
+      reader.onload = (e) => {
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = () => {
+        reject(new Error('Failed to read file'));
       };
       reader.readAsDataURL(file);
     });
-
-    setError('');
   }, []);
+
+  const onDrop = useCallback(async (acceptedFiles: File[]) => {
+    const filesWithMeta: FileWithPreview[] = [];
+    const previews: string[] = [];
+
+    for (const file of acceptedFiles) {
+      let preview = '';
+      let processedFile = file;
+
+      try {
+        // Compress the image for AI processing
+        const compressed = await compressImage(file);
+        processedFile = compressed.compressedFile;
+        preview = compressed.preview;
+      } catch (err) {
+        console.error('Error compressing file:', err);
+        // Fallback to original file and basic preview
+        processedFile = file;
+        try {
+          preview = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+          });
+        } catch (previewErr) {
+          console.error('Error creating preview:', previewErr);
+          preview = '';
+        }
+      }
+
+      const fileWithMeta = Object.assign(processedFile, {
+        preview,
+        originalName: file.name // Keep track of original filename
+      });
+
+      filesWithMeta.push(fileWithMeta);
+      previews.push(preview);
+    }
+
+    setSelectedFiles(prev => [...prev, ...filesWithMeta]);
+    setPreviewUrls(prev => [...prev, ...previews]);
+    setError('');
+  }, [compressImage]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -51,17 +205,18 @@ export default function RunwayPromptPage() {
 
   const removeFile = (index: number) => {
     const fileToRemove = selectedFiles[index];
-    
+    const displayName = fileToRemove.originalName || fileToRemove.name;
+
     setSelectedFiles(prev => prev.filter((_, i) => i !== index));
     setPreviewUrls(prev => prev.filter((_, i) => i !== index));
-    
+
     // Remove from results if it exists
-    setResults(prev => prev.filter(result => result.filename !== fileToRemove.name));
-    
+    setResults(prev => prev.filter(result => result.filename !== displayName));
+
     // Remove from processing set if it's being processed
     setProcessingImages(prev => {
       const newSet = new Set(prev);
-      newSet.delete(fileToRemove.name);
+      newSet.delete(displayName);
       return newSet;
     });
   };
@@ -82,7 +237,7 @@ export default function RunwayPromptPage() {
       // Process images in batches of 10
       const batchSize = 10;
       const allResults: PromptResult[] = [];
-      
+
       for (let i = 0; i < selectedFiles.length; i += batchSize) {
         // Check if user wants to stop
         if (shouldStop) {
@@ -91,15 +246,17 @@ export default function RunwayPromptPage() {
 
         const batch = selectedFiles.slice(i, i + batchSize);
         setCurrentFile(i + 1);
-        
+
         // Mark current batch images as processing
-        const currentBatchNames = new Set(batch.map(file => file.name));
+        const currentBatchNames = new Set(batch.map(file => file.originalName || file.name));
         setProcessingImages(currentBatchNames);
-        
+
         // Create FormData for batch processing
         const formData = new FormData();
         batch.forEach((file, index) => {
           formData.append(`image_${index}`, file);
+          // Also send the original filename for proper result mapping
+          formData.append(`originalName_${index}`, file.originalName || file.name);
         });
 
         try {
@@ -114,7 +271,7 @@ export default function RunwayPromptPage() {
           }
 
           const data = await response.json();
-          
+
           interface ApiResult {
             filename: string;
             low?: string;
@@ -122,7 +279,7 @@ export default function RunwayPromptPage() {
             high?: string;
             error?: string;
           }
-          
+
           // Convert batch results to our format
           const batchResults: PromptResult[] = data.results.map((result: ApiResult) => ({
             filename: result.filename,
@@ -134,11 +291,11 @@ export default function RunwayPromptPage() {
 
           allResults.push(...batchResults);
           setResults([...allResults]);
-          
+
           // Update progress
           const processedCount = Math.min(i + batchSize, selectedFiles.length);
           setProgress(Math.round((processedCount / selectedFiles.length) * 100));
-          
+
         } catch (err: unknown) {
           // If batch fails, add error results for all files in the batch
           const errorResults: PromptResult[] = batch.map(file => ({
@@ -148,11 +305,11 @@ export default function RunwayPromptPage() {
             high: '',
             error: err instanceof Error ? err.message : 'Failed to process batch',
           }));
-          
+
           allResults.push(...errorResults);
           setResults([...allResults]);
         }
-        
+
         // Clear processing status for this batch
         setProcessingImages(new Set());
       }
@@ -276,32 +433,32 @@ export default function RunwayPromptPage() {
                     <div className="grid grid-cols-4 gap-3">
                       {previewUrls.map((url, index) => {
                         const file = selectedFiles[index];
-                        const isProcessingThisImage = processingImages.has(file.name);
-                        const hasResult = results.find(r => r.filename === file.name);
+                        const displayName = file?.originalName || file?.name;
+                        const isProcessingThisImage = processingImages.has(displayName || '');
+                        const hasResult = results.find(r => r.filename === displayName);
                         const hasError = hasResult?.error;
-                        
+
                         return (
                           <div key={index} className="relative group">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
                               src={url}
-                              alt={`Preview of ${file.name}`}
-                              className={`w-full h-20 object-cover rounded-lg border transition-all ${
-                                hasError 
-                                  ? 'border-red-300 opacity-60' 
-                                  : hasResult 
-                                    ? 'border-green-300' 
-                                    : 'border-slate-200'
-                              }`}
+                              alt={`Preview of ${displayName}`}
+                              className={`w-full h-20 object-cover rounded-lg border transition-all ${hasError
+                                ? 'border-red-300 opacity-60'
+                                : hasResult
+                                  ? 'border-green-300'
+                                  : 'border-slate-200'
+                                }`}
                             />
-                            
+
                             {/* Processing Loader Overlay */}
                             {isProcessingThisImage && (
                               <div className="absolute inset-0 rounded-lg flex items-center justify-center">
                                 <div className="w-8 h-8 border-3 border-white border-t-transparent rounded-full animate-spin shadow-lg"></div>
                               </div>
                             )}
-                            
+
                             {/* Success Indicator */}
                             {hasResult && !hasError && (
                               <div className="absolute top-1 right-1 w-4 h-4 bg-green-500 rounded-full flex items-center justify-center">
@@ -310,7 +467,7 @@ export default function RunwayPromptPage() {
                                 </svg>
                               </div>
                             )}
-                            
+
                             {/* Error Indicator */}
                             {hasError && (
                               <div className="absolute top-1 right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center">
@@ -319,7 +476,7 @@ export default function RunwayPromptPage() {
                                 </svg>
                               </div>
                             )}
-                            
+
                             {/* Remove Button */}
                             <button
                               onClick={() => removeFile(index)}

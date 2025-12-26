@@ -22,12 +22,14 @@ export async function POST(request: NextRequest) {
 
     const formData = await request.formData();
     const aiProvider = (formData.get('aiProvider') as string) || 'ideogram';
-    const imageFiles: File[] = [];
-    
-    // Extract all image files from formData
+    const imageFiles: { file: File; originalName: string }[] = [];
+
+    // Extract all image files and their original names from formData
     for (const [key, value] of formData.entries()) {
       if (key.startsWith('image_') && value instanceof File) {
-        imageFiles.push(value);
+        const index = key.replace('image_', '');
+        const originalName = (formData.get(`originalName_${index}`) as string) || value.name;
+        imageFiles.push({ file: value, originalName });
       }
     }
 
@@ -56,15 +58,15 @@ export async function POST(request: NextRequest) {
     let successfulProcessing = 0;
 
     // Process images in parallel (up to 5 at a time to avoid overwhelming the API)
-    const processInBatches = async (files: File[], batchSize: number = 5) => {
+    const processInBatches = async (files: { file: File; originalName: string }[], batchSize: number = 5) => {
       for (let i = 0; i < files.length; i += batchSize) {
         const batch = files.slice(i, i + batchSize);
-        const promises = batch.map(async (file) => {
+        const promises = batch.map(async ({ file, originalName }) => {
           try {
             // Validate file
             if (!file.type.startsWith('image/')) {
               return {
-                filename: file.name,
+                filename: originalName,
                 description: '',
                 confidence: 0,
                 source: '',
@@ -72,10 +74,10 @@ export async function POST(request: NextRequest) {
                 success: false
               };
             }
-            
+
             if (file.size > 10 * 1024 * 1024) {
               return {
-                filename: file.name,
+                filename: originalName,
                 description: '',
                 confidence: 0,
                 source: '',
@@ -136,7 +138,7 @@ export async function POST(request: NextRequest) {
             await prisma.imageDescription.create({
               data: {
                 userId: user.id,
-                filename: file.name,
+                filename: originalName,
                 description,
                 confidence,
                 source,
@@ -148,16 +150,16 @@ export async function POST(request: NextRequest) {
             successfulProcessing++;
 
             return {
-              filename: file.name,
+              filename: originalName,
               description,
               confidence,
               source,
               success: true
             };
           } catch (error) {
-            console.error(`Error processing ${file.name}:`, error);
+            console.error(`Error processing ${originalName}:`, error);
             return {
-              filename: file.name,
+              filename: originalName,
               description: '',
               confidence: 0,
               source: '',
@@ -205,7 +207,7 @@ export async function POST(request: NextRequest) {
 
   } catch (error: unknown) {
     console.error('Batch describe error:', error);
-    
+
     // Check if it's an authentication error
     if (error instanceof Error && (error.message === 'User not authenticated' || error.message === 'User not found')) {
       return NextResponse.json(

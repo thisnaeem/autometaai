@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
 
     if (!validation.isValid) {
       return NextResponse.json(
-        { 
+        {
           error: 'Insufficient BG removal credits',
           required: files.length,
           available: validation.available,
@@ -60,26 +60,27 @@ export async function POST(request: NextRequest) {
     const results: ProcessResult[] = [];
     let successCount = 0;
 
-    for (const file of files) {
+    // Process images in parallel batches of 3 to avoid overwhelming the API but stay responsive
+    const BATCH_SIZE = 3;
+
+    const processImage = async (file: File): Promise<ProcessResult> => {
       try {
         const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
         if (!validTypes.includes(file.type)) {
-          results.push({
+          return {
             success: false,
             filename: file.name,
             error: 'Invalid file type'
-          });
-          continue;
+          };
         }
 
         const maxSize = 10 * 1024 * 1024;
         if (file.size > maxSize) {
-          results.push({
+          return {
             success: false,
             filename: file.name,
             error: 'File too large (max 10MB)'
-          });
-          continue;
+          };
         }
 
         const photoroomFormData = new FormData();
@@ -94,39 +95,65 @@ export async function POST(request: NextRequest) {
         });
 
         if (!response.ok) {
-          results.push({
+          // Handle specific Photoroom API errors
+          let errorMessage = `API error: ${response.status}`;
+
+          if (response.status === 401 || response.status === 403) {
+            errorMessage = 'Photoroom API key is invalid or expired. Please contact admin.';
+          } else if (response.status === 429) {
+            errorMessage = 'Rate limit exceeded. Please try again later.';
+          } else if (response.status === 402) {
+            errorMessage = 'Photoroom API credits exhausted. Please contact admin.';
+          }
+
+          // Try to get more details from response
+          try {
+            const errorData = await response.text();
+            console.error(`Photoroom API error for ${file.name}:`, errorData);
+          } catch {
+            // Ignore if we can't read the error response
+          }
+
+          return {
             success: false,
             filename: file.name,
-            error: `API error: ${response.status}`
-          });
-          continue;
+            error: errorMessage
+          };
         }
 
         const imageBuffer = await response.arrayBuffer();
         const base64Image = Buffer.from(imageBuffer).toString('base64');
 
-        results.push({
+        return {
           success: true,
           filename: file.name,
           imageData: base64Image
-        });
-
-        successCount++;
+        };
       } catch (error) {
-        results.push({
+        console.error(`Processing error for ${file.name}:`, error);
+        return {
           success: false,
           filename: file.name,
           error: error instanceof Error ? error.message : 'Processing failed'
-        });
+        };
       }
+    };
+
+    // Process files in batches
+    for (let i = 0; i < files.length; i += BATCH_SIZE) {
+      const batch = files.slice(i, i + BATCH_SIZE);
+      const batchResults = await Promise.all(batch.map(processImage));
+
+      results.push(...batchResults);
+      successCount += batchResults.filter(r => r.success).length;
     }
 
     if (successCount > 0) {
       const creditResult = await bgCreditManager.deductCredits(
-        successCount, 
+        successCount,
         `Bulk background removal: ${successCount} images`
       );
-      
+
       if (!creditResult.success) {
         return NextResponse.json(
           { error: creditResult.error || 'Failed to deduct BG removal credits' },

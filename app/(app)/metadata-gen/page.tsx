@@ -236,10 +236,10 @@ export default function MetadataGenPage() {
   }, []);
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
-    const filesWithMeta: FileWithPreview[] = [];
-    const previews: string[] = [];
+    // Process files in small batches to prevent UI blocking
+    const BATCH_SIZE = 3;
 
-    for (const file of acceptedFiles) {
+    const processFile = async (file: File): Promise<{ fileWithMeta: FileWithPreview; preview: string }> => {
       const isVideo = file.type.startsWith('video/');
       const isSvg = file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg');
 
@@ -294,12 +294,32 @@ export default function MetadataGenPage() {
         originalName: file.name // Keep track of original filename
       });
 
-      filesWithMeta.push(fileWithMeta);
-      previews.push(preview);
+      return { fileWithMeta, preview };
+    };
+
+    // Yield control back to browser to keep UI responsive
+    const yieldToMain = () => new Promise<void>(resolve => setTimeout(resolve, 0));
+
+    // Process files in batches
+    for (let i = 0; i < acceptedFiles.length; i += BATCH_SIZE) {
+      const batch = acceptedFiles.slice(i, i + BATCH_SIZE);
+
+      // Process batch in parallel
+      const batchResults = await Promise.all(batch.map(processFile));
+
+      // Update state with batch results
+      const newFiles = batchResults.map(r => r.fileWithMeta);
+      const newPreviews = batchResults.map(r => r.preview);
+
+      setSelectedFiles(prev => [...prev, ...newFiles]);
+      setPreviewUrls(prev => [...prev, ...newPreviews]);
+
+      // Yield to main thread between batches to keep UI responsive
+      if (i + BATCH_SIZE < acceptedFiles.length) {
+        await yieldToMain();
+      }
     }
 
-    setSelectedFiles(prev => [...prev, ...filesWithMeta]);
-    setPreviewUrls(prev => [...prev, ...previews]);
     setError('');
   }, [compressImage]);
 
