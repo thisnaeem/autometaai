@@ -150,7 +150,7 @@ export async function POST(request: NextRequest) {
               title = title.slice(0, titleLength);
             }
 
-            const keywordList = keywords.split(',').map((k: string) => k.trim()).filter((k: string) => k);
+            const keywordList = keywords.split(',').map((k: string) => k.trim().toLowerCase()).filter((k: string) => k);
             if (keywordList.length > keywordCount) {
               keywords = keywordList.slice(0, keywordCount).join(',');
             } else {

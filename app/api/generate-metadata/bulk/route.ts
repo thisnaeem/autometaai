@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
         let keywords = (geminiResult.keywords || '').replace(/[^\w\s,]/g, '').trim();
         const keywordList = keywords
           .split(',')
-          .map((k: string) => k.trim())
+          .map((k: string) => k.trim().toLowerCase())
           .filter((k: string) => k);
         if (keywordList.length > keywordCount) {
           keywords = keywordList.slice(0, keywordCount).join(',');

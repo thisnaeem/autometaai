@@ -947,51 +947,79 @@ export default function MetadataGenPage() {
                     const file = selectedFiles[index];
                     const isVideo = file?.isVideo;
                     const isSvg = file?.isSvg;
+                    const previewUrl = previewUrls[index];
 
                     return (
                       <div key={index} className="p-4 bg-slate-50 rounded-xl border border-slate-200">
-                        <div className="flex items-center gap-2 mb-3">
-                          <p className="text-sm font-semibold text-slate-900 flex-1">{result.filename}</p>
-                          {isVideo && (
-                            <span className="text-[10px] font-bold bg-black text-white px-2 py-1 rounded">
-                              VIDEO
-                            </span>
+                        <div className="flex gap-4">
+                          {/* Image Preview */}
+                          {previewUrl && (
+                            <div className="flex-shrink-0">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={previewUrl}
+                                alt={`Preview of ${result.filename}`}
+                                className={`w-24 h-24 object-cover rounded-lg border border-slate-200 ${isSvg ? 'bg-white p-1' : ''}`}
+                              />
+                              {isVideo && (
+                                <span className="block text-center mt-1 text-[10px] font-bold bg-black text-white px-2 py-0.5 rounded">
+                                  VIDEO
+                                </span>
+                              )}
+                              {isSvg && (
+                                <span className="block text-center mt-1 text-[10px] font-bold bg-purple-600 text-white px-2 py-0.5 rounded">
+                                  SVG
+                                </span>
+                              )}
+                            </div>
                           )}
-                          {isSvg && (
-                            <span className="text-[10px] font-bold bg-purple-600 text-white px-2 py-1 rounded">
-                              SVG
-                            </span>
-                          )}
-                        </div>
 
-                        {result.error ? (
-                          <p className="text-sm text-red-600">{result.error}</p>
-                        ) : (
-                          <div className="space-y-3">
-                            {[
-                              { label: 'Title', value: result.title, color: 'from-cyan-500 to-blue-500' },
-                              { label: 'Keywords', value: result.keywords, color: 'from-indigo-500 to-purple-500' }
-                            ].map((item, i) => (
-                              <div key={i}>
-                                <div className="flex items-center justify-between mb-1">
-                                  <span className={`text-xs font-bold uppercase bg-gradient-to-r ${item.color} bg-clip-text text-transparent`}>
-                                    {item.label}
-                                  </span>
-                                  <button
-                                    onClick={() => copyToClipboard(item.value)}
-                                    className="p-1 hover:bg-slate-200 rounded transition-colors"
-                                    title="Copy"
-                                  >
-                                    <HugeiconsIcon icon={Copy01Icon} size={14} className="text-slate-500" />
-                                  </button>
-                                </div>
-                                <p className="text-xs text-slate-700 bg-white p-2 rounded border border-slate-200 break-words">
-                                  {item.value}
-                                </p>
+                          {/* Metadata Content */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-3">
+                              <p className="text-sm font-semibold text-slate-900 flex-1 truncate">{result.filename}</p>
+                              {!previewUrl && isVideo && (
+                                <span className="text-[10px] font-bold bg-black text-white px-2 py-1 rounded">
+                                  VIDEO
+                                </span>
+                              )}
+                              {!previewUrl && isSvg && (
+                                <span className="text-[10px] font-bold bg-purple-600 text-white px-2 py-1 rounded">
+                                  SVG
+                                </span>
+                              )}
+                            </div>
+
+                            {result.error ? (
+                              <p className="text-sm text-red-600">{result.error}</p>
+                            ) : (
+                              <div className="space-y-3">
+                                {[
+                                  { label: 'Title', value: result.title, color: 'from-cyan-500 to-blue-500' },
+                                  { label: 'Keywords', value: result.keywords, color: 'from-indigo-500 to-purple-500' }
+                                ].map((item, i) => (
+                                  <div key={i}>
+                                    <div className="flex items-center justify-between mb-1">
+                                      <span className={`text-xs font-bold uppercase bg-gradient-to-r ${item.color} bg-clip-text text-transparent`}>
+                                        {item.label}
+                                      </span>
+                                      <button
+                                        onClick={() => copyToClipboard(item.value)}
+                                        className="p-1 hover:bg-slate-200 rounded transition-colors"
+                                        title="Copy"
+                                      >
+                                        <HugeiconsIcon icon={Copy01Icon} size={14} className="text-slate-500" />
+                                      </button>
+                                    </div>
+                                    <p className="text-xs text-slate-700 bg-white p-2 rounded border border-slate-200 break-words">
+                                      {item.value}
+                                    </p>
+                                  </div>
+                                ))}
                               </div>
-                            ))}
+                            )}
                           </div>
-                        )}
+                        </div>
                       </div>
                     );
                   })}
