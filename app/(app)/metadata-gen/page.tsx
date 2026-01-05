@@ -1,9 +1,16 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Upload04Icon, Download01Icon, Image02Icon, Copy01Icon, InformationCircleIcon, Settings02Icon } from '@hugeicons/core-free-icons';
+import {
+  Upload04Icon,
+  Download01Icon,
+  Image02Icon,
+  Copy01Icon,
+  Settings02Icon,
+  Video01Icon,
+} from '@hugeicons/core-free-icons';
 import { Button } from '@/components/ui/Button';
 
 interface MetadataResult {
@@ -14,34 +21,82 @@ interface MetadataResult {
   error?: string;
 }
 
-interface FileWithPreview extends File {
-  preview?: string;
-  isVideo?: boolean;
-  isSvg?: boolean;
-  originalName?: string;
+interface FileItem {
+  id: string;
+  file: File;
+  originalName: string;
+  isVideo: boolean;
+  isSvg: boolean;
+  size: number;
 }
 
 const STOCK_PLATFORMS = [
-  { id: 'adobe', name: 'Adobe Stock', selected: true, icon: '/adobe.png' },
-  { id: 'shutterstock', name: 'Shutterstock', locked: true, icon: '/shutterstock.png' },
-  { id: 'istock', name: 'iStock', locked: true, icon: '/istock.png' },
-  { id: 'freepik', name: 'Freepik', locked: true, icon: '/freepik.png' },
+  {
+    id: 'adobe',
+    name: 'Adobe Stock',
+    icon: '/adobe.png',
+    headers: ['Filename', 'Title', 'Keywords', 'Category'],
+    getRow: (r: MetadataResult) => [r.filename, r.title, r.keywords, r.category],
+  },
+  {
+    id: 'shutterstock',
+    name: 'Shutterstock',
+    icon: '/shutterstock.png',
+    headers: ['Filename', 'Description', 'Keywords'],
+    getRow: (r: MetadataResult) => [r.filename, r.title, r.keywords],
+  },
+  {
+    id: 'istock',
+    name: 'iStock',
+    icon: '/istock.png',
+    headers: ['File name', 'Description', 'Country', 'Title', 'Keywords'],
+    getRow: (r: MetadataResult) => [r.filename, r.title, '', r.title, r.keywords],
+  },
+  {
+    id: 'freepik',
+    name: 'Freepik',
+    icon: '/freepik.png',
+    headers: ['File name', 'Title', 'Keywords'],
+    getRow: (r: MetadataResult) => [r.filename, r.title, r.keywords],
+  },
 ];
 
+// Virtual scroll config - optimized for performance
+const ITEM_SIZE = 80;
+const GRID_GAP = 12;
+const ITEMS_PER_ROW = 4;
+const ROW_HEIGHT = ITEM_SIZE + GRID_GAP;
+const CONTAINER_HEIGHT = 320;
+const VISIBLE_ROWS = Math.ceil(CONTAINER_HEIGHT / ROW_HEIGHT) + 2;
+
+// Concurrency limits
+const MAX_CONCURRENT_THUMBNAILS = 2;
+const THUMBNAIL_QUEUE_DELAY = 50;
+
+let idCounter = 0;
+const generateId = () => `f${++idCounter}`;
+
 export default function MetadataGenPage() {
-  const [selectedFiles, setSelectedFiles] = useState<FileWithPreview[]>([]);
-  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+  const [fileItems, setFileItems] = useState<FileItem[]>([]);
   const [results, setResults] = useState<MetadataResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingImages, setProcessingImages] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string>('');
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null);
 
-  // Settings
+  // Scroll state for virtualization
+  const [scrollTop, setScrollTop] = useState(0);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Thumbnail cache - only for images, NOT videos
+  const thumbnailCache = useRef<Map<string, string>>(new Map());
+  const thumbnailQueue = useRef<Set<string>>(new Set());
+  const activeLoads = useRef(0);
+
+  // Settings state
   const [titleLength, setTitleLength] = useState(150);
   const [keywordCount, setKeywordCount] = useState(45);
   const [singleWordKeywords, setSingleWordKeywords] = useState(false);
-
-  // Advanced Settings
   const [showSettings, setShowSettings] = useState(false);
   const [isSilhouette, setIsSilhouette] = useState(false);
   const [customPromptEnabled, setCustomPromptEnabled] = useState(false);
@@ -50,331 +105,203 @@ export default function MetadataGenPage() {
   const [transparentBackground, setTransparentBackground] = useState(false);
   const [prohibitedWordsEnabled, setProhibitedWordsEnabled] = useState(false);
   const [prohibitedWords, setProhibitedWords] = useState('');
+  const [selectedPlatform, setSelectedPlatform] = useState('adobe');
 
-  const extractVideoFrame = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const video = document.createElement('video');
-      video.src = URL.createObjectURL(file);
-      video.muted = true;
-      video.playsInline = true;
-      video.currentTime = 1.0;
-
-      video.onseeked = () => {
-        const canvas = document.createElement('canvas');
-
-        // Set canvas size - limit to reasonable dimensions for compression
-        const maxWidth = 1280;
-        const maxHeight = 720;
-
-        let { videoWidth, videoHeight } = video;
-
-        // Calculate aspect ratio and resize if needed
-        if (videoWidth > maxWidth || videoHeight > maxHeight) {
-          const aspectRatio = videoWidth / videoHeight;
-          if (videoWidth > videoHeight) {
-            videoWidth = maxWidth;
-            videoHeight = maxWidth / aspectRatio;
-          } else {
-            videoHeight = maxHeight;
-            videoWidth = maxHeight * aspectRatio;
-          }
-        }
-
-        canvas.width = videoWidth;
-        canvas.height = videoHeight;
-
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(video, 0, 0, videoWidth, videoHeight);
-
-          // Convert to compressed JPEG with quality setting
-          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7); // 70% quality
-
-          // Check compressed size and further reduce if needed
-          const base64Data = compressedDataUrl.split(',')[1];
-          const sizeInKB = (base64Data.length * 3) / 4 / 1024; // Approximate size in KB
-
-          if (sizeInKB > 500) { // If still larger than 500KB, compress more
-            const furtherCompressed = canvas.toDataURL('image/jpeg', 0.5); // 50% quality
-            resolve(furtherCompressed);
-          } else {
-            resolve(compressedDataUrl);
-          }
-        } else {
-          reject(new Error('Failed to get canvas context'));
-        }
-        URL.revokeObjectURL(video.src);
-      };
-
-      video.onerror = () => {
-        reject(new Error('Failed to load video'));
-        URL.revokeObjectURL(video.src);
-      };
-
-      video.load();
-    });
-  };
-
-  // Convert data URL to File object
-  const dataURLtoFile = (dataurl: string, filename: string): File => {
-    const arr = dataurl.split(',');
-    const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
-    const bstr = atob(arr[1]);
-    let n = bstr.length;
-    const u8arr = new Uint8Array(n);
-    while (n--) {
-      u8arr[n] = bstr.charCodeAt(n);
-    }
-    return new File([u8arr], filename, { type: mime });
-  };
-
-  // Compress image to target size (20-30KB)
-  const compressImage = useCallback((file: File): Promise<{ compressedFile: File; preview: string }> => {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-
-      if (!ctx) {
-        reject(new Error('Failed to get canvas context'));
-        return;
-      }
-
-      img.onload = () => {
-        // Calculate dimensions to maintain aspect ratio
-        const maxDimension = 800; // Start with reasonable max dimension
-        let { width, height } = img;
-
-        if (width > height) {
-          if (width > maxDimension) {
-            height = (height * maxDimension) / width;
-            width = maxDimension;
-          }
-        } else {
-          if (height > maxDimension) {
-            width = (width * maxDimension) / height;
-            height = maxDimension;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-
-        // Draw and compress
-        ctx.drawImage(img, 0, 0, width, height);
-
-        // Function to try different quality levels
-        const tryCompress = (quality: number): string => {
-          return canvas.toDataURL('image/jpeg', quality);
-        };
-
-        // Binary search for optimal quality to achieve 20-30KB
-        let minQuality = 0.1;
-        let maxQuality = 0.9;
-        let bestDataUrl = '';
-        let bestSize = 0;
-        const targetMinSize = 15 * 1024; // 15KB minimum
-        const targetMaxSize = 35 * 1024; // 35KB maximum
-
-        // Try different quality levels
-        for (let i = 0; i < 10; i++) {
-          const currentQuality = (minQuality + maxQuality) / 2;
-          const dataUrl = tryCompress(currentQuality);
-          const base64Data = dataUrl.split(',')[1];
-          const sizeInBytes = (base64Data.length * 3) / 4;
-
-          if (sizeInBytes >= targetMinSize && sizeInBytes <= targetMaxSize) {
-            bestDataUrl = dataUrl;
-            bestSize = sizeInBytes;
-            break;
-          } else if (sizeInBytes > targetMaxSize) {
-            maxQuality = currentQuality;
-          } else {
-            minQuality = currentQuality;
-          }
-
-          // Keep track of the best attempt
-          if (!bestDataUrl || Math.abs(sizeInBytes - 25 * 1024) < Math.abs(bestSize - 25 * 1024)) {
-            bestDataUrl = dataUrl;
-            bestSize = sizeInBytes;
-          }
-        }
-
-        // If still too large, reduce dimensions
-        if (bestSize > targetMaxSize) {
-          const scaleFactor = Math.sqrt(targetMaxSize / bestSize);
-          canvas.width = Math.floor(width * scaleFactor);
-          canvas.height = Math.floor(height * scaleFactor);
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          bestDataUrl = tryCompress(0.8);
-        }
-
-        // Create compressed file
-        const compressedFileName = file.name.replace(/\.[^/.]+$/, '') + '_compressed.jpg';
-        const compressedFile = dataURLtoFile(bestDataUrl, compressedFileName);
-
-        resolve({
-          compressedFile,
-          preview: bestDataUrl
-        });
-      };
-
-      img.onerror = () => {
-        reject(new Error('Failed to load image for compression'));
-      };
-
-      // Load the image
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        img.src = e.target?.result as string;
-      };
-      reader.onerror = () => {
-        reject(new Error('Failed to read file'));
-      };
-      reader.readAsDataURL(file);
-    });
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      thumbnailCache.current.forEach((url) => {
+        if (url.startsWith('blob:')) URL.revokeObjectURL(url);
+      });
+    };
   }, []);
 
-  const onDrop = useCallback(async (acceptedFiles: File[]) => {
-    // Process files in small batches to prevent UI blocking
-    const BATCH_SIZE = 3;
+  // Calculate visible range for virtual scroll
+  const virtualData = useMemo(() => {
+    const totalRows = Math.ceil(fileItems.length / ITEMS_PER_ROW);
+    const totalHeight = totalRows * ROW_HEIGHT;
+    const startRow = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - 1);
+    const endRow = Math.min(totalRows, startRow + VISIBLE_ROWS + 1);
+    const startIdx = startRow * ITEMS_PER_ROW;
+    const endIdx = Math.min(fileItems.length, endRow * ITEMS_PER_ROW);
+    const offsetY = startRow * ROW_HEIGHT;
 
-    const processFile = async (file: File): Promise<{ fileWithMeta: FileWithPreview; preview: string }> => {
-      const isVideo = file.type.startsWith('video/');
-      const isSvg = file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg');
+    return {
+      totalHeight,
+      offsetY,
+      visibleItems: fileItems.slice(startIdx, endIdx),
+      startIdx,
+    };
+  }, [fileItems, scrollTop]);
 
-      let preview = '';
-      let processedFile = file;
+  // Optimized drop handler - just store references, no processing
+  const onDrop = useCallback((acceptedFiles: File[]) => {
+    if (acceptedFiles.length === 0) return;
 
-      try {
-        if (isVideo) {
-          // For videos, extract frame and compress it
-          const frameDataUrl = await extractVideoFrame(file);
-          const frameFile = dataURLtoFile(frameDataUrl, `${file.name}_frame.jpg`);
-          const compressed = await compressImage(frameFile);
-          processedFile = compressed.compressedFile;
-          preview = compressed.preview;
-        } else if (isSvg) {
-          // For SVG files, don't compress, just read as data URL
-          preview = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result as string);
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-          });
-          // Keep original SVG file
-          processedFile = file;
-        } else {
-          // For regular images, compress them
-          const compressed = await compressImage(file);
-          processedFile = compressed.compressedFile;
-          preview = compressed.preview;
-        }
-      } catch (err) {
-        console.error('Error processing file:', err);
-        // Fallback to original file and basic preview
-        processedFile = file;
-        try {
-          preview = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result as string);
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-          });
-        } catch (previewErr) {
-          console.error('Error creating preview:', previewErr);
-          preview = '';
-        }
+    const total = acceptedFiles.length;
+    setUploadProgress({ current: 0, total });
+
+    // Process in microtasks to avoid blocking
+    const BATCH = 100;
+    let processed = 0;
+
+    const processBatch = () => {
+      const batch = acceptedFiles.slice(processed, processed + BATCH);
+      const newItems: FileItem[] = batch.map((file) => ({
+        id: generateId(),
+        file,
+        originalName: file.name,
+        isVideo: file.type.startsWith('video/'),
+        isSvg: file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg'),
+        size: file.size,
+      }));
+
+      setFileItems((prev) => [...prev, ...newItems]);
+      processed += batch.length;
+      setUploadProgress({ current: processed, total });
+
+      if (processed < total) {
+        setTimeout(processBatch, 0);
+      } else {
+        setUploadProgress(null);
+        setError('');
       }
-
-      const fileWithMeta = Object.assign(processedFile, {
-        preview,
-        isVideo,
-        isSvg,
-        originalName: file.name // Keep track of original filename
-      });
-
-      return { fileWithMeta, preview };
     };
 
-    // Yield control back to browser to keep UI responsive
-    const yieldToMain = () => new Promise<void>(resolve => setTimeout(resolve, 0));
-
-    // Process files in batches
-    for (let i = 0; i < acceptedFiles.length; i += BATCH_SIZE) {
-      const batch = acceptedFiles.slice(i, i + BATCH_SIZE);
-
-      // Process batch in parallel
-      const batchResults = await Promise.all(batch.map(processFile));
-
-      // Update state with batch results
-      const newFiles = batchResults.map(r => r.fileWithMeta);
-      const newPreviews = batchResults.map(r => r.preview);
-
-      setSelectedFiles(prev => [...prev, ...newFiles]);
-      setPreviewUrls(prev => [...prev, ...newPreviews]);
-
-      // Yield to main thread between batches to keep UI responsive
-      if (i + BATCH_SIZE < acceptedFiles.length) {
-        await yieldToMain();
-      }
-    }
-
-    setError('');
-  }, [compressImage]);
+    processBatch();
+  }, []);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
       'image/*': ['.png', '.jpg', '.jpeg', '.webp', '.svg'],
-      'video/*': ['.mp4', '.mov', '.avi', '.webm']
+      'video/*': ['.mp4', '.mov', '.avi', '.webm'],
     },
-    maxSize: 150 * 1024 * 1024, // 150MB for videos
+    maxSize: 150 * 1024 * 1024,
   });
 
-  const removeFile = (index: number) => {
-    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
-    setPreviewUrls(prev => prev.filter((_, i) => i !== index));
+  const removeFile = useCallback((id: string) => {
+    const url = thumbnailCache.current.get(id);
+    if (url?.startsWith('blob:')) URL.revokeObjectURL(url);
+    thumbnailCache.current.delete(id);
+    setFileItems((prev) => prev.filter((f) => f.id !== id));
+  }, []);
+
+  const clearAll = useCallback(() => {
+    thumbnailCache.current.forEach((url) => {
+      if (url.startsWith('blob:')) URL.revokeObjectURL(url);
+    });
+    thumbnailCache.current.clear();
+    thumbnailQueue.current.clear();
+    setFileItems([]);
+    setResults([]);
+  }, []);
+
+  // Compress for API - done only when generating metadata
+  const compressForApi = async (item: FileItem): Promise<File> => {
+    if (item.isSvg) return item.file;
+
+    return new Promise((resolve) => {
+      if (item.isVideo) {
+        const video = document.createElement('video');
+        const url = URL.createObjectURL(item.file);
+        video.src = url;
+        video.muted = true;
+        video.currentTime = 1;
+
+        const timeout = setTimeout(() => {
+          URL.revokeObjectURL(url);
+          resolve(item.file);
+        }, 8000);
+
+        video.onseeked = () => {
+          clearTimeout(timeout);
+          const canvas = document.createElement('canvas');
+          const scale = Math.min(800 / video.videoWidth, 800 / video.videoHeight, 1);
+          canvas.width = video.videoWidth * scale;
+          canvas.height = video.videoHeight * scale;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            canvas.toBlob(
+              (blob) => {
+                URL.revokeObjectURL(url);
+                resolve(blob ? new File([blob], `${item.originalName}.jpg`, { type: 'image/jpeg' }) : item.file);
+              },
+              'image/jpeg',
+              0.7
+            );
+          } else {
+            URL.revokeObjectURL(url);
+            resolve(item.file);
+          }
+        };
+
+        video.onerror = () => {
+          clearTimeout(timeout);
+          URL.revokeObjectURL(url);
+          resolve(item.file);
+        };
+      } else {
+        const img = new Image();
+        const url = URL.createObjectURL(item.file);
+
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const scale = Math.min(800 / img.width, 800 / img.height, 1);
+          canvas.width = img.width * scale;
+          canvas.height = img.height * scale;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            canvas.toBlob(
+              (blob) => {
+                URL.revokeObjectURL(url);
+                resolve(blob ? new File([blob], item.originalName, { type: 'image/jpeg' }) : item.file);
+              },
+              'image/jpeg',
+              0.7
+            );
+          } else {
+            URL.revokeObjectURL(url);
+            resolve(item.file);
+          }
+        };
+
+        img.onerror = () => {
+          URL.revokeObjectURL(url);
+          resolve(item.file);
+        };
+
+        img.src = url;
+      }
+    });
   };
 
-  const handleGenerateMetadata = async () => {
-    if (selectedFiles.length === 0) return;
+  const handleGenerate = async () => {
+    if (fileItems.length === 0) return;
 
     setIsProcessing(true);
     setError('');
     setResults([]);
-    setProcessingImages(new Set());
+
+    const batchSize = 10;
+    const allResults: MetadataResult[] = [];
 
     try {
-      // Process images in batches of 10
-      const batchSize = 10;
-      const allResults: MetadataResult[] = [];
+      for (let i = 0; i < fileItems.length; i += batchSize) {
+        const batch = fileItems.slice(i, i + batchSize);
+        setProcessingImages(new Set(batch.map((f) => f.originalName)));
 
-      for (let i = 0; i < selectedFiles.length; i += batchSize) {
-        const batch = selectedFiles.slice(i, i + batchSize);
-
-        // Mark current batch images as processing
-        const currentBatchNames = new Set(batch.map(file => file.originalName || file.name));
-        setProcessingImages(currentBatchNames);
-
-        // Create FormData for batch processing
         const formData = new FormData();
 
-        // Process video frames for the batch
+        // Compress sequentially to avoid memory spikes
         for (let j = 0; j < batch.length; j++) {
-          const file = batch[j];
-          const fileToSend = file;
-
-          // For videos, the file is already processed (compressed frame)
-          // For images, the file is already compressed
-          // Just send the processed file directly
-          formData.append(`image_${j}`, fileToSend);
-
-          // Also send the original filename for proper result mapping
-          formData.append(`originalName_${j}`, file.originalName || file.name);
+          const compressed = await compressForApi(batch[j]);
+          formData.append(`image_${j}`, compressed);
+          formData.append(`originalName_${j}`, batch[j].originalName);
         }
 
-        // Add settings to formData
         formData.append('titleLength', titleLength.toString());
         formData.append('keywordCount', keywordCount.toString());
         formData.append('singleWordKeywords', singleWordKeywords.toString());
@@ -385,95 +312,209 @@ export default function MetadataGenPage() {
         formData.append('prohibitedWords', prohibitedWordsEnabled ? prohibitedWords : '');
 
         try {
-          const response = await fetch('/api/generate-metadata/batch', {
-            method: 'POST',
-            body: formData,
-          });
+          const res = await fetch('/api/generate-metadata/batch', { method: 'POST', body: formData });
+          if (!res.ok) throw new Error((await res.json()).error || 'Failed');
 
-          if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || 'Failed to generate metadata');
-          }
-
-          const data = await response.json();
-
-          interface ApiMetadataResult {
-            filename: string;
-            title?: string;
-            keywords?: string;
-            category?: string;
-            error?: string;
-          }
-
-          // Convert batch results to our format
-          const batchResults: MetadataResult[] = data.results.map((result: ApiMetadataResult) => ({
-            filename: result.filename,
-            title: result.title || '',
-            keywords: result.keywords || '',
-            category: result.category || '',
-            error: result.error
+          const data = await res.json();
+          const batchResults = data.results.map((r: { filename: string; title?: string; keywords?: string; category?: string; error?: string }) => ({
+            filename: r.filename,
+            title: r.title || '',
+            keywords: r.keywords || '',
+            category: r.category || '',
+            error: r.error,
           }));
 
           allResults.push(...batchResults);
           setResults([...allResults]);
-
-        } catch (err: unknown) {
-          // If batch fails, add error results for all files in the batch
-          const errorResults: MetadataResult[] = batch.map(file => ({
-            filename: file.originalName || file.name,
-            title: '',
-            keywords: '',
-            category: '',
-            error: err instanceof Error ? err.message : 'Failed to process batch',
-          }));
-
-          allResults.push(...errorResults);
+        } catch (err) {
+          allResults.push(
+            ...batch.map((f) => ({
+              filename: f.originalName,
+              title: '',
+              keywords: '',
+              category: '',
+              error: err instanceof Error ? err.message : 'Failed',
+            }))
+          );
           setResults([...allResults]);
         }
 
-        // Clear processing status for this batch
         setProcessingImages(new Set());
+        await new Promise((r) => setTimeout(r, 100));
       }
-
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'An error occurred while processing images');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error occurred');
     } finally {
       setIsProcessing(false);
       setProcessingImages(new Set());
     }
   };
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-  };
+  const copyToClipboard = (text: string) => navigator.clipboard.writeText(text);
 
   const exportToCSV = () => {
     if (results.length === 0) return;
 
-    const csvContent = [
-      ['Filename', 'Title', 'Keywords', 'Category'],
-      ...results.map(r => [
-        r.filename,
-        r.title || '',
-        r.keywords || '',
-        r.category || ''
-      ])
-    ].map(row => row.map(cell => `"${cell.replace(/"/g, '""')}"`).join(',')).join('\n');
+    const platform = STOCK_PLATFORMS.find(p => p.id === selectedPlatform) || STOCK_PLATFORMS[0];
+    const csv = [
+      platform.headers,
+      ...results.map((r) => platform.getRow(r)),
+    ]
+      .map((row) => row.map((c) => `"${c.replace(/"/g, '""')}"`).join(','))
+      .join('\n');
 
-    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'adobe_stock_metadata.csv';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${platform.id}_metadata.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
+
+  // Lightweight thumbnail component - NO video thumbnails
+  const FileThumb = React.memo(({ item }: { item: FileItem }) => {
+    const [thumb, setThumb] = useState<string | null>(null);
+    const mountedRef = useRef(true);
+
+    useEffect(() => {
+      mountedRef.current = true;
+
+      // Videos: NO thumbnail generation - just show icon
+      if (item.isVideo) {
+        return;
+      }
+
+      // Check cache
+      const cached = thumbnailCache.current.get(item.id);
+      if (cached) {
+        setThumb(cached);
+        return;
+      }
+
+      // Skip if already queued
+      if (thumbnailQueue.current.has(item.id)) return;
+
+      // Queue thumbnail generation with concurrency limit
+      const loadThumb = async () => {
+        if (activeLoads.current >= MAX_CONCURRENT_THUMBNAILS) {
+          setTimeout(loadThumb, THUMBNAIL_QUEUE_DELAY);
+          return;
+        }
+
+        thumbnailQueue.current.add(item.id);
+        activeLoads.current++;
+
+        try {
+          const url = URL.createObjectURL(item.file);
+
+          if (item.isSvg) {
+            thumbnailCache.current.set(item.id, url);
+            if (mountedRef.current) setThumb(url);
+          } else {
+            // Create tiny thumbnail for images only
+            const img = new Image();
+            img.onload = () => {
+              const canvas = document.createElement('canvas');
+              const scale = Math.min(80 / img.width, 80 / img.height, 1);
+              canvas.width = Math.max(1, img.width * scale);
+              canvas.height = Math.max(1, img.height * scale);
+              const ctx = canvas.getContext('2d');
+              if (ctx) {
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                canvas.toBlob(
+                  (blob) => {
+                    URL.revokeObjectURL(url);
+                    if (blob && mountedRef.current) {
+                      const thumbUrl = URL.createObjectURL(blob);
+                      thumbnailCache.current.set(item.id, thumbUrl);
+                      setThumb(thumbUrl);
+                    }
+                  },
+                  'image/jpeg',
+                  0.5
+                );
+              } else {
+                URL.revokeObjectURL(url);
+              }
+            };
+            img.onerror = () => URL.revokeObjectURL(url);
+            img.src = url;
+          }
+        } finally {
+          activeLoads.current--;
+          thumbnailQueue.current.delete(item.id);
+        }
+      };
+
+      loadThumb();
+
+      return () => {
+        mountedRef.current = false;
+      };
+    }, [item]);
+
+    const isProc = processingImages.has(item.originalName);
+    const result = results.find((r) => r.filename === item.originalName);
+    const hasErr = result?.error;
+
+    return (
+      <div className="relative group" style={{ width: ITEM_SIZE, height: ITEM_SIZE }}>
+        <div
+          className={`w-full h-full rounded-lg border-2 flex items-center justify-center overflow-hidden ${hasErr ? 'border-red-400 bg-red-50' : result ? 'border-green-400 bg-green-50' : 'border-slate-200 bg-slate-100'
+            }`}
+        >
+          {item.isVideo ? (
+            <div className="flex flex-col items-center justify-center text-slate-400">
+              <HugeiconsIcon icon={Video01Icon} size={28} />
+              <span className="text-[9px] mt-1 font-medium">VIDEO</span>
+            </div>
+          ) : thumb ? (
+            <img src={thumb} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
+          ) : (
+            <div className="w-5 h-5 border-2 border-slate-300 border-t-cyan-500 rounded-full animate-spin" />
+          )}
+        </div>
+
+        {isProc && (
+          <div className="absolute inset-0 bg-black/40 rounded-lg flex items-center justify-center">
+            <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+          </div>
+        )}
+
+        {result && !hasErr && (
+          <div className="absolute top-1 right-1 w-4 h-4 bg-green-500 rounded-full flex items-center justify-center">
+            <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+            </svg>
+          </div>
+        )}
+
+        {hasErr && (
+          <div className="absolute top-1 right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center">
+            <span className="text-white text-xs font-bold">!</span>
+          </div>
+        )}
+
+        {item.isSvg && (
+          <div className="absolute bottom-1 right-1 bg-purple-600 text-white text-[8px] px-1 rounded font-bold">SVG</div>
+        )}
+
+        <button
+          onClick={() => removeFile(item.id)}
+          className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-xs z-10"
+        >
+          ×
+        </button>
+      </div>
+    );
+  });
+
+  FileThumb.displayName = 'FileThumb';
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-white p-8">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
         <div className="mb-8 text-center">
           <h1 className="text-5xl font-bold text-slate-900 mb-2">
             Generate <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-600 to-blue-600">Metadata</span>
@@ -482,550 +523,265 @@ export default function MetadataGenPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Upload & Settings */}
           <div className="space-y-6">
             <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-6">
               <h2 className="text-xl font-semibold text-slate-900 mb-4 flex items-center">
                 <HugeiconsIcon icon={Upload04Icon} size={24} className="mr-2 text-cyan-600" />
-                Upload Images
+                Upload Files
               </h2>
 
               <div
                 {...getRootProps()}
-                className={`border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-all duration-300 ${isDragActive
-                  ? 'border-cyan-500 bg-cyan-50'
-                  : 'border-slate-300 hover:border-cyan-400 hover:bg-slate-50'
+                className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-all ${isDragActive ? 'border-cyan-500 bg-cyan-50' : 'border-slate-300 hover:border-cyan-400'
                   }`}
               >
                 <input {...getInputProps()} />
-                <HugeiconsIcon icon={Image02Icon} size={64} className="mx-auto mb-4 text-slate-400" />
-                <p className="text-lg font-medium text-slate-700 mb-2">
-                  {isDragActive ? 'Drop your images here' : 'Drag & drop images'}
-                </p>
-                <p className="text-sm text-slate-500 mb-4">or click to browse</p>
-                <p className="text-xs text-slate-400">
-                  Supports: JPG, PNG, WEBP, SVG, MP4, MOV, AVI, WEBM (Max 150MB per file)
-                </p>
+                <HugeiconsIcon icon={Image02Icon} size={48} className="mx-auto mb-3 text-slate-400" />
+                <p className="text-lg font-medium text-slate-700">{isDragActive ? 'Drop files here' : 'Drag & drop files'}</p>
+                <p className="text-sm text-slate-500">or click to browse</p>
+                <p className="text-xs text-slate-400 mt-2">JPG, PNG, WEBP, SVG, MP4, MOV, AVI, WEBM</p>
               </div>
-              {selectedFiles.length > 0 && (
-                <div className="mt-6 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-semibold text-slate-700">
-                      {selectedFiles.length} {selectedFiles.length === 1 ? 'image' : 'images'} selected
-                    </p>
-                    <button
-                      onClick={() => {
-                        setSelectedFiles([]);
-                        setPreviewUrls([]);
-                        setResults([]);
-                      }}
-                      className="text-sm text-red-600 hover:text-red-700 font-medium"
-                    >
+
+              {uploadProgress && (
+                <div className="mt-4">
+                  <div className="flex justify-between text-sm text-slate-600 mb-1">
+                    <span>Adding files...</span>
+                    <span>{uploadProgress.current}/{uploadProgress.total}</span>
+                  </div>
+                  <div className="w-full bg-slate-200 rounded-full h-2">
+                    <div
+                      className="bg-cyan-500 h-2 rounded-full transition-all"
+                      style={{ width: `${(uploadProgress.current / uploadProgress.total) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {fileItems.length > 0 && (
+                <div className="mt-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-sm font-semibold text-slate-700">{fileItems.length} files selected</p>
+                    <button onClick={clearAll} className="text-sm text-red-600 hover:text-red-700 font-medium">
                       Clear All
                     </button>
                   </div>
 
-                  <div className="max-h-80 overflow-y-auto border border-slate-200 rounded-lg p-3 bg-slate-50">
-                    <div className="grid grid-cols-4 gap-3">
-                      {previewUrls.map((url, index) => {
-                        const file = selectedFiles[index];
-                        const isVideo = file?.isVideo;
-                        const isSvg = file?.isSvg;
-                        const displayName = file?.originalName || file?.name;
-                        const isProcessingThisImage = processingImages.has(displayName || '');
-                        const hasResult = results.find(r => r.filename === displayName);
-                        const hasError = hasResult?.error;
-
-                        return (
-                          <div key={index} className="relative group">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={url}
-                              alt={`Preview of ${displayName}`}
-                              className={`w-full h-20 object-cover rounded-lg border transition-all ${hasError
-                                ? 'border-red-300 opacity-60'
-                                : hasResult
-                                  ? 'border-green-300'
-                                  : 'border-slate-200'
-                                } ${isSvg ? 'bg-white p-1' : ''}`}
-                            />
-
-                            {/* Processing Loader Overlay */}
-                            {isProcessingThisImage && (
-                              <div className="absolute inset-0 rounded-lg flex items-center justify-center">
-                                <div className="w-8 h-8 border-3 border-white border-t-transparent rounded-full animate-spin shadow-lg"></div>
-                              </div>
-                            )}
-
-                            {/* Success Indicator */}
-                            {hasResult && !hasError && (
-                              <div className="absolute top-1 right-1 w-4 h-4 bg-green-500 rounded-full flex items-center justify-center">
-                                <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20">
-                                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                </svg>
-                              </div>
-                            )}
-
-                            {/* Error Indicator */}
-                            {hasError && (
-                              <div className="absolute top-1 right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center">
-                                <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20">
-                                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                                </svg>
-                              </div>
-                            )}
-
-                            {/* Video Badge */}
-                            {isVideo && (
-                              <div className="absolute bottom-1 right-1 bg-black/70 text-white text-[8px] px-1 py-0.5 rounded font-bold">
-                                VIDEO
-                              </div>
-                            )}
-
-                            {/* SVG Badge */}
-                            {isSvg && (
-                              <div className="absolute bottom-1 right-1 bg-purple-600 text-white text-[8px] px-1 py-0.5 rounded font-bold">
-                                SVG
-                              </div>
-                            )}
-
-                            {/* Remove Button */}
-                            <button
-                              onClick={() => removeFile(index)}
-                              className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-10"
-                              disabled={isProcessingThisImage}
-                            >
-                              ×
-                            </button>
-                          </div>
-                        );
-                      })}
+                  {/* Virtualized grid */}
+                  <div
+                    ref={scrollContainerRef}
+                    className="border border-slate-200 rounded-lg bg-slate-50 overflow-auto"
+                    style={{ height: CONTAINER_HEIGHT }}
+                    onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+                  >
+                    <div style={{ height: virtualData.totalHeight, position: 'relative' }}>
+                      <div
+                        className="absolute left-0 right-0 p-3"
+                        style={{ transform: `translateY(${virtualData.offsetY}px)` }}
+                      >
+                        <div className="grid grid-cols-4 gap-3">
+                          {virtualData.visibleItems.map((item) => (
+                            <FileThumb key={item.id} item={item} />
+                          ))}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Collapsible Settings Panel */}
+            {/* Settings */}
             <div className="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
               <button
                 onClick={() => setShowSettings(!showSettings)}
-                className="w-full px-6 py-4 bg-slate-100 text-slate-700 font-medium text-sm flex items-center justify-between hover:bg-slate-200 transition-all"
+                className="w-full px-6 py-4 bg-slate-100 text-slate-700 font-medium text-sm flex items-center justify-between hover:bg-slate-200"
               >
                 <span className="flex items-center gap-2">
                   <HugeiconsIcon icon={Settings02Icon} size={20} />
                   Settings
                 </span>
-                <svg
-                  className={`w-4 h-4 transition-transform ${showSettings ? 'rotate-180' : ''}`}
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="3"
-                >
+                <svg className={`w-4 h-4 transition-transform ${showSettings ? 'rotate-180' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
                   <polyline points="6 9 12 15 18 9" />
                 </svg>
               </button>
 
-              <div className={`transition-all duration-300 ${showSettings ? 'max-h-[1000px]' : 'max-h-0 overflow-hidden'}`}>
-                <div className="p-6">
-                  {/* Core Parameters */}
-                  <div className="mb-8">
-                    <h4 className="text-md font-semibold text-slate-800 mb-4">Core Parameters</h4>
-                    <div className="space-y-6">
-                      <div>
-                        <div className="flex justify-between mb-2">
-                          <label className="text-sm font-medium text-slate-700">Title Length</label>
-                          <span className="text-sm font-semibold text-cyan-600">{titleLength} chars</span>
-                        </div>
-                        <input
-                          type="range"
-                          min="50"
-                          max="200"
-                          step="10"
-                          value={titleLength}
-                          onChange={(e) => setTitleLength(parseInt(e.target.value))}
-                          className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-cyan-600"
-                          suppressHydrationWarning
-                        />
-                      </div>
-
-                      <div>
-                        <div className="flex justify-between mb-2">
-                          <label className="text-sm font-medium text-slate-700">Keywords Count</label>
-                          <span className="text-sm font-semibold text-cyan-600">{keywordCount} keywords</span>
-                        </div>
-                        <input
-                          type="range"
-                          min="10"
-                          max="50"
-                          step="5"
-                          value={keywordCount}
-                          onChange={(e) => setKeywordCount(parseInt(e.target.value))}
-                          className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-cyan-600"
-                          suppressHydrationWarning
-                        />
-                      </div>
+              {showSettings && (
+                <div className="p-6 space-y-6">
+                  <div>
+                    <div className="flex justify-between mb-2">
+                      <label className="text-sm font-medium text-slate-700">Title Length</label>
+                      <span className="text-sm font-semibold text-cyan-600">{titleLength}</span>
                     </div>
+                    <input type="range" min="50" max="200" step="10" value={titleLength} onChange={(e) => setTitleLength(+e.target.value)} className="w-full accent-cyan-600" />
                   </div>
 
-                  {/* Advanced Settings */}
-                  <div className="mb-8">
-                    <h4 className="text-md font-semibold text-slate-800 mb-4">Advanced Settings</h4>
-                    <div className="space-y-4">
-                      {/* Silhouette */}
-                      <div className="flex items-center justify-between py-3 border-b border-slate-200">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-slate-700">SILHOUETTE</span>
-                          <div className="relative group">
-                            <HugeiconsIcon icon={InformationCircleIcon} size={16} className="text-slate-400 cursor-help" />
-                            <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 p-3 bg-slate-900 text-white text-xs rounded-lg shadow-xl z-[9999]">
-                              <div className="absolute left-4 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-900"></div>
-                              Enable this if your image is a silhouette (solid shape with no internal details). This helps AI generate more accurate metadata.
-                            </div>
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => setIsSilhouette(!isSilhouette)}
-                          className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${isSilhouette ? 'bg-gradient-to-r from-cyan-500 to-blue-500' : 'bg-slate-300'
-                            }`}
-                        >
-                          <span
-                            className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-md ${isSilhouette ? 'translate-x-5' : ''
-                              }`}
-                          />
-                        </button>
-                      </div>
-
-                      {/* Custom Prompt */}
-                      <div className="border-b border-slate-200 pb-4 relative">
-                        <div className="flex items-center justify-between py-4">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-bold text-slate-900 uppercase tracking-wide">CUSTOM PROMPT</span>
-                            <div className="relative group">
-                              <HugeiconsIcon icon={InformationCircleIcon} size={16} className="text-slate-400 cursor-help" />
-                              <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 p-3 bg-slate-900 text-white text-xs rounded-lg shadow-xl z-[9999]">
-                                <div className="absolute left-4 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-900"></div>
-                                Add custom instructions to guide the AI. For example: &ldquo;Focus on mood and atmosphere&rdquo; or &ldquo;Emphasize technical details&rdquo;.
-                              </div>
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => setCustomPromptEnabled(!customPromptEnabled)}
-                            className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${customPromptEnabled ? 'bg-gradient-to-r from-cyan-500 to-blue-500' : 'bg-slate-300'
-                              }`}
-                          >
-                            <span
-                              className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-md ${customPromptEnabled ? 'translate-x-5' : ''
-                                }`}
-                            />
-                          </button>
-                        </div>
-                        {customPromptEnabled && (
-                          <input
-                            type="text"
-                            value={customPrompt}
-                            onChange={(e) => setCustomPrompt(e.target.value)}
-                            placeholder="e.g. Focus on mood..."
-                            className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 mt-2"
-                          />
-                        )}
-                      </div>
-
-                      {/* White Background */}
-                      <div className="flex items-center justify-between py-4 border-b border-slate-200 relative">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold text-slate-900 uppercase tracking-wide">WHITE BACKGROUND</span>
-                          <div className="relative group">
-                            <HugeiconsIcon icon={InformationCircleIcon} size={16} className="text-slate-400 cursor-help" />
-                            <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 p-3 bg-slate-900 text-white text-xs rounded-lg shadow-xl z-[9999]">
-                              <div className="absolute left-4 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-900"></div>
-                              Enable if your image has a white or light-colored background. This helps generate appropriate keywords and descriptions.
-                            </div>
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => setWhiteBackground(!whiteBackground)}
-                          className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${whiteBackground ? 'bg-gradient-to-r from-cyan-500 to-blue-500' : 'bg-slate-300'
-                            }`}
-                        >
-                          <span
-                            className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-md ${whiteBackground ? 'translate-x-5' : ''
-                              }`}
-                          />
-                        </button>
-                      </div>
-
-                      {/* Transparent Background */}
-                      <div className="flex items-center justify-between py-4 border-b border-slate-200 relative">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold text-slate-900 uppercase tracking-wide">TRANSPARENT BACKGROUND</span>
-                          <div className="relative group">
-                            <HugeiconsIcon icon={InformationCircleIcon} size={16} className="text-slate-400 cursor-help" />
-                            <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 p-3 bg-slate-900 text-white text-xs rounded-lg shadow-xl z-[9999]">
-                              <div className="absolute left-4 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-900"></div>
-                              Enable if your image has a transparent background. This helps generate appropriate keywords and descriptions.
-                            </div>
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => setTransparentBackground(!transparentBackground)}
-                          className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${transparentBackground ? 'bg-gradient-to-r from-cyan-500 to-blue-500' : 'bg-slate-300'
-                            }`}
-                        >
-                          <span
-                            className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-md ${transparentBackground ? 'translate-x-5' : ''
-                              }`}
-                          />
-                        </button>
-                      </div>
-
-                      {/* Single Word Keywords */}
-                      <div className="flex items-center justify-between py-4 border-b border-slate-200 relative">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold text-slate-900 uppercase tracking-wide">SINGLE WORD KEYWORDS</span>
-                          <div className="relative group">
-                            <HugeiconsIcon icon={InformationCircleIcon} size={16} className="text-slate-400 cursor-help" />
-                            <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 p-3 bg-slate-900 text-white text-xs rounded-lg shadow-xl z-[9999]">
-                              <div className="absolute left-4 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-900"></div>
-                              Generate only single-word keywords instead of phrases. Useful for certain stock platforms.
-                            </div>
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => setSingleWordKeywords(!singleWordKeywords)}
-                          className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${singleWordKeywords ? 'bg-gradient-to-r from-cyan-500 to-blue-500' : 'bg-slate-300'
-                            }`}
-                        >
-                          <span
-                            className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-md ${singleWordKeywords ? 'translate-x-5' : ''
-                              }`}
-                          />
-                        </button>
-                      </div>
-
-                      {/* Prohibited Words */}
-                      <div className="border-b border-slate-200 pb-4 relative">
-                        <div className="flex items-center justify-between py-4">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-bold text-slate-900 uppercase tracking-wide">PROHIBITED WORDS</span>
-                            <div className="relative group">
-                              <HugeiconsIcon icon={InformationCircleIcon} size={16} className="text-slate-400 cursor-help" />
-                              <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 p-3 bg-slate-900 text-white text-xs rounded-lg shadow-xl z-[9999]">
-                                <div className="absolute left-4 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-900"></div>
-                                List words to avoid in keywords and titles. Separate with commas.
-                              </div>
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => setProhibitedWordsEnabled(!prohibitedWordsEnabled)}
-                            className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${prohibitedWordsEnabled ? 'bg-gradient-to-r from-cyan-500 to-blue-500' : 'bg-slate-300'
-                              }`}
-                          >
-                            <span
-                              className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-md ${prohibitedWordsEnabled ? 'translate-x-5' : ''
-                                }`}
-                            />
-                          </button>
-                        </div>
-                        {prohibitedWordsEnabled && (
-                          <input
-                            type="text"
-                            value={prohibitedWords}
-                            onChange={(e) => setProhibitedWords(e.target.value)}
-                            placeholder="e.g. brand, logo, trademark"
-                            className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 mt-2"
-                          />
-                        )}
-                      </div>
+                  <div>
+                    <div className="flex justify-between mb-2">
+                      <label className="text-sm font-medium text-slate-700">Keywords Count</label>
+                      <span className="text-sm font-semibold text-cyan-600">{keywordCount}</span>
                     </div>
+                    <input type="range" min="10" max="50" step="5" value={keywordCount} onChange={(e) => setKeywordCount(+e.target.value)} className="w-full accent-cyan-600" />
                   </div>
 
-                  {/* Stock Platforms */}
-                  <div className="mb-6">
-                    <h4 className="text-md font-semibold text-slate-800 mb-4">Stock Platforms</h4>
-                    <div className="flex gap-3">
+                  {[
+                    { label: 'Silhouette', state: isSilhouette, setter: setIsSilhouette },
+                    { label: 'White Background', state: whiteBackground, setter: setWhiteBackground },
+                    { label: 'Transparent Background', state: transparentBackground, setter: setTransparentBackground },
+                    { label: 'Single Word Keywords', state: singleWordKeywords, setter: setSingleWordKeywords },
+                  ].map(({ label, state, setter }) => (
+                    <div key={label} className="flex items-center justify-between py-2 border-b border-slate-100">
+                      <span className="text-sm font-medium text-slate-700">{label}</span>
+                      <button
+                        onClick={() => setter(!state)}
+                        className={`relative w-10 h-5 rounded-full transition-colors ${state ? 'bg-cyan-500' : 'bg-slate-300'}`}
+                      >
+                        <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${state ? 'translate-x-5' : ''}`} />
+                      </button>
+                    </div>
+                  ))}
+
+                  <div className="pt-2">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium text-slate-700">Custom Prompt</span>
+                      <button
+                        onClick={() => setCustomPromptEnabled(!customPromptEnabled)}
+                        className={`relative w-10 h-5 rounded-full transition-colors ${customPromptEnabled ? 'bg-cyan-500' : 'bg-slate-300'}`}
+                      >
+                        <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${customPromptEnabled ? 'translate-x-5' : ''}`} />
+                      </button>
+                    </div>
+                    {customPromptEnabled && (
+                      <textarea
+                        value={customPrompt}
+                        onChange={(e) => setCustomPrompt(e.target.value)}
+                        placeholder="Custom instructions..."
+                        className="w-full p-2 border border-slate-200 rounded-lg text-sm resize-none"
+                        rows={2}
+                      />
+                    )}
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium text-slate-700">Prohibited Words</span>
+                      <button
+                        onClick={() => setProhibitedWordsEnabled(!prohibitedWordsEnabled)}
+                        className={`relative w-10 h-5 rounded-full transition-colors ${prohibitedWordsEnabled ? 'bg-cyan-500' : 'bg-slate-300'}`}
+                      >
+                        <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${prohibitedWordsEnabled ? 'translate-x-5' : ''}`} />
+                      </button>
+                    </div>
+                    {prohibitedWordsEnabled && (
+                      <textarea
+                        value={prohibitedWords}
+                        onChange={(e) => setProhibitedWords(e.target.value)}
+                        placeholder="Words to exclude (comma separated)..."
+                        className="w-full p-2 border border-slate-200 rounded-lg text-sm resize-none"
+                        rows={2}
+                      />
+                    )}
+                  </div>
+
+                  {/* Stock Platforms inside Settings */}
+                  <div className="pt-4 border-t border-slate-200">
+                    <h4 className="text-sm font-semibold text-slate-800 mb-3">Stock Platform</h4>
+                    <div className="grid grid-cols-2 gap-2">
                       {STOCK_PLATFORMS.map((platform) => (
-                        <div
+                        <button
                           key={platform.id}
-                          className={`flex-1 p-3 rounded-lg border transition-all ${platform.selected
-                            ? 'border-cyan-500 bg-cyan-50'
-                            : platform.locked
-                              ? 'border-slate-200 bg-slate-50 opacity-50'
+                          onClick={() => setSelectedPlatform(platform.id)}
+                          className={`flex items-center gap-2 p-2.5 rounded-lg border-2 transition-all ${selectedPlatform === platform.id
+                              ? 'border-cyan-500 bg-cyan-50'
                               : 'border-slate-200 bg-white hover:border-slate-300'
                             }`}
                         >
-                          <div className="flex items-center gap-3">
-                            {/* Platform Icon */}
-                            <div className="w-6 h-6 flex-shrink-0">
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                src={platform.icon}
-                                alt={`${platform.name} logo`}
-                                className="w-full h-full object-contain"
-                              />
-                            </div>
-
-                            <div className="flex-1 flex items-center justify-between">
-                              <span className={`text-xs font-medium ${platform.locked ? 'text-slate-400' : 'text-slate-700'
-                                }`}>
-                                {platform.name}
-                              </span>
-                              {platform.locked && (
-                                <span className="text-xs bg-slate-100 text-slate-500 px-2 py-1 rounded font-medium">
-                                  Soon
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={platform.icon}
+                            alt={platform.name}
+                            className="w-6 h-6 object-contain"
+                          />
+                          <span className="text-xs font-medium text-slate-700">{platform.name}</span>
+                        </button>
                       ))}
                     </div>
                   </div>
                 </div>
-              </div>
+              )}
             </div>
 
-            {error && (
-              <div className="p-4 bg-red-50 border border-red-200 rounded-xl">
-                <p className="text-sm text-red-600">{error}</p>
-              </div>
-            )}
-
-            <Button
-              variant="primary"
-              size="lg"
-              onClick={handleGenerateMetadata}
-              disabled={isProcessing || selectedFiles.length === 0}
-              className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700"
-            >
+            <Button onClick={handleGenerate} disabled={fileItems.length === 0 || isProcessing} className="w-full py-4 text-lg font-semibold">
               {isProcessing ? (
-                <>
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                  Processing...
-                </>
+                <span className="flex items-center justify-center gap-2">
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Processing {results.length}/{fileItems.length}...
+                </span>
               ) : (
-                <>
-                  <HugeiconsIcon icon={Image02Icon} size={20} className="mr-2" />
+                <span className="flex items-center justify-center gap-2">
+                  <HugeiconsIcon icon={Image02Icon} size={20} />
                   Generate Metadata
-                </>
+                </span>
               )}
             </Button>
 
-            {results.length > 0 && (
-              <Button
-                variant="outline"
-                size="lg"
-                onClick={exportToCSV}
-                className="w-full border-slate-300 text-slate-700 hover:bg-slate-50"
-              >
-                <HugeiconsIcon icon={Download01Icon} size={20} className="mr-2" />
-                Export to CSV
-              </Button>
-            )}
+            {error && <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{error}</div>}
           </div>
 
           {/* Results */}
-          <div className="space-y-6">
-            <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-6 min-h-[500px]">
-              <h2 className="text-xl font-semibold text-slate-900 mb-4 flex items-center">
+          <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold text-slate-900 flex items-center">
                 <HugeiconsIcon icon={Image02Icon} size={24} className="mr-2 text-cyan-600" />
                 Results ({results.length})
               </h2>
-
-              {results.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-96 text-center">
-                  <HugeiconsIcon icon={Image02Icon} size={80} className="text-slate-300 mb-4" />
-                  <p className="text-slate-500 text-lg font-medium">No results yet</p>
-                  <p className="text-slate-400 text-sm mt-2">
-                    Upload images and click &ldquo;Generate&rdquo; to see metadata
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-4 max-h-[600px] overflow-y-auto">
-                  {results.map((result, index) => {
-                    const file = selectedFiles[index];
-                    const isVideo = file?.isVideo;
-                    const isSvg = file?.isSvg;
-                    const previewUrl = previewUrls[index];
-
-                    return (
-                      <div key={index} className="p-4 bg-slate-50 rounded-xl border border-slate-200">
-                        <div className="flex gap-4">
-                          {/* Image Preview */}
-                          {previewUrl && (
-                            <div className="flex-shrink-0">
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                src={previewUrl}
-                                alt={`Preview of ${result.filename}`}
-                                className={`w-24 h-24 object-cover rounded-lg border border-slate-200 ${isSvg ? 'bg-white p-1' : ''}`}
-                              />
-                              {isVideo && (
-                                <span className="block text-center mt-1 text-[10px] font-bold bg-black text-white px-2 py-0.5 rounded">
-                                  VIDEO
-                                </span>
-                              )}
-                              {isSvg && (
-                                <span className="block text-center mt-1 text-[10px] font-bold bg-purple-600 text-white px-2 py-0.5 rounded">
-                                  SVG
-                                </span>
-                              )}
-                            </div>
-                          )}
-
-                          {/* Metadata Content */}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-3">
-                              <p className="text-sm font-semibold text-slate-900 flex-1 truncate">{result.filename}</p>
-                              {!previewUrl && isVideo && (
-                                <span className="text-[10px] font-bold bg-black text-white px-2 py-1 rounded">
-                                  VIDEO
-                                </span>
-                              )}
-                              {!previewUrl && isSvg && (
-                                <span className="text-[10px] font-bold bg-purple-600 text-white px-2 py-1 rounded">
-                                  SVG
-                                </span>
-                              )}
-                            </div>
-
-                            {result.error ? (
-                              <p className="text-sm text-red-600">{result.error}</p>
-                            ) : (
-                              <div className="space-y-3">
-                                {[
-                                  { label: 'Title', value: result.title, color: 'from-cyan-500 to-blue-500' },
-                                  { label: 'Keywords', value: result.keywords, color: 'from-indigo-500 to-purple-500' }
-                                ].map((item, i) => (
-                                  <div key={i}>
-                                    <div className="flex items-center justify-between mb-1">
-                                      <span className={`text-xs font-bold uppercase bg-gradient-to-r ${item.color} bg-clip-text text-transparent`}>
-                                        {item.label}
-                                      </span>
-                                      <button
-                                        onClick={() => copyToClipboard(item.value)}
-                                        className="p-1 hover:bg-slate-200 rounded transition-colors"
-                                        title="Copy"
-                                      >
-                                        <HugeiconsIcon icon={Copy01Icon} size={14} className="text-slate-500" />
-                                      </button>
-                                    </div>
-                                    <p className="text-xs text-slate-700 bg-white p-2 rounded border border-slate-200 break-words">
-                                      {item.value}
-                                    </p>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+              {results.length > 0 && (
+                <Button onClick={exportToCSV} variant="outline" size="sm">
+                  <HugeiconsIcon icon={Download01Icon} size={16} className="mr-2" />
+                  Export CSV
+                </Button>
               )}
             </div>
+
+            {results.length === 0 ? (
+              <div className="text-center py-16 text-slate-400">
+                <HugeiconsIcon icon={Image02Icon} size={64} className="mx-auto mb-4 opacity-50" />
+                <p>No results yet</p>
+                <p className="text-sm">Upload files and click Generate</p>
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-[600px] overflow-y-auto">
+                {results.map((r, i) => (
+                  <div key={i} className={`p-4 rounded-lg border ${r.error ? 'bg-red-50 border-red-200' : 'bg-slate-50 border-slate-200'}`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="font-semibold text-slate-900 truncate max-w-[200px]">{r.filename}</h3>
+                      {r.error && <span className="text-xs text-red-600 bg-red-100 px-2 py-0.5 rounded">Error</span>}
+                    </div>
+
+                    {r.error ? (
+                      <p className="text-sm text-red-600">{r.error}</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {[
+                          { label: 'Title', value: r.title },
+                          { label: 'Keywords', value: r.keywords },
+                          { label: 'Category', value: r.category },
+                        ].map(({ label, value }) => (
+                          <div key={label}>
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-medium text-slate-500 uppercase">{label}</span>
+                              <button onClick={() => copyToClipboard(value)} className="text-slate-400 hover:text-cyan-600">
+                                <HugeiconsIcon icon={Copy01Icon} size={14} />
+                              </button>
+                            </div>
+                            <p className="text-sm text-slate-700 line-clamp-2">{value}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
