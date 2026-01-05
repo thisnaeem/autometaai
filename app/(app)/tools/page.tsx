@@ -21,7 +21,7 @@ const TOOLS: Tool[] = [
     name: 'Runway Automation Pro',
     description: 'Automate your Runway ML workflow with this powerful Chrome extension. Batch process videos, manage prompts, and streamline your creative process.',
     type: 'extension',
-    downloadUrl: 'https://drive.google.com/file/d/1S8Zlc7GUoFlQO-yxBCkH4qJYpaPVzQYW/view?usp=sharing',
+    downloadUrl: 'https://drive.usercontent.google.com/u/0/uc?id=1S8Zlc7GUoFlQO-yxBCkH4qJYpaPVzQYW&export=download',
     icon: '🚀',
     features: [
       'Batch video generation',
